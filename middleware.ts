@@ -55,11 +55,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/dashboard/:path*",
-    "/login",
-    "/register",
-    "/profile/:path*",
-    // Add other protected routes
-  ],
+  matcher: ["/dashboard/:path*", "/login", "/register", "/profile/:path*"],
 };

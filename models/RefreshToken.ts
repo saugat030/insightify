@@ -8,7 +8,7 @@ const RefreshTokenSchema = new Schema({
     required: true,
   },
   jti: {
-    type: String, // The JWT ID
+    type: String,
     required: true,
     unique: true,
   },
@@ -22,9 +22,7 @@ const RefreshTokenSchema = new Schema({
   },
 });
 
-// Index the jti for fast lookups
-RefreshTokenSchema.index({ jti: 1 });
-// Index for cleanup tasks
+// Index for cleanup tasks (This one is correct and should stay)
 RefreshTokenSchema.index({ expires: 1 }, { expireAfterSeconds: 0 });
 
 export default models.RefreshToken || model("RefreshToken", RefreshTokenSchema);

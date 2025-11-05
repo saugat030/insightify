@@ -53,7 +53,7 @@ export async function getAiAnalysis(
 ): Promise<{ summary: string[]; tags: string[] }> {
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-pro",
+      model: "gemini-pro-latest",
       generationConfig,
       safetySettings,
     });
@@ -72,11 +72,13 @@ export async function getAiAnalysis(
 
     const result = await model.generateContent(prompt);
     const response = result.response;
-    const jsonText = response
-      .text()
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
+    const rawText = response.text();
+
+    // Find the JSON block, even if it's wrapped in markdown
+    const jsonMatch = rawText.match(/```(json)?([\s\S]*?)```/);
+
+    // Use the matched JSON or assume the whole string is JSON
+    const jsonText = jsonMatch ? jsonMatch[2].trim() : rawText.trim();
 
     // Parse the cleaned-up JSON string
     return JSON.parse(jsonText);
