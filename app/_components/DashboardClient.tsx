@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import axios from "axios";
+import axiosInstance from "@/lib/axiosInstance";
 import { useAuth } from "@/hooks/useAuth";
 import { LinkCard } from "./LinkCard";
 
@@ -35,7 +35,7 @@ export function DashboardClient() {
           setError(null);
           try {
             // The access token is automatically added by our axios interceptor
-            const response = await axios.get("/api/links");
+            const response = await axiosInstance.get("/api/links");
             setLinks(response.data);
           } catch (err: any) {
             setError(err.response?.data?.error || "Failed to fetch links.");

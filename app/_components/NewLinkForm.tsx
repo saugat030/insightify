@@ -3,7 +3,7 @@
 
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import axios from "axios";
+import axiosInstance from "@/lib/axiosInstance";
 
 export function NewLinkForm() {
   const [url, setUrl] = useState("");
@@ -22,7 +22,7 @@ export function NewLinkForm() {
     try {
       // The access token is automatically added by
       // the axios interceptor from our AuthProvider
-      const response = await axios.post("/api/links", { url });
+      const response = await axiosInstance.post("/api/links", { url });
 
       // Handle success
       setSuccess(`Saved "${response.data.title}"!`);

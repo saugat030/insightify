@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import axios from "axios";
+import axiosInstance from "@/lib/axiosInstance";
 import { useRouter } from "next/navigation"; // <-- FIX: 'from' not 'in'
 
 // Define the type for a Link object, matching our API/model
@@ -34,7 +34,7 @@ export function LinkCard({ link }: LinkCardProps) {
     setError(null);
     try {
       // The access token is automatically added by our axios interceptor
-      await axios.delete(`/api/links/${link._id}`);
+      await axiosInstance.delete(`/api/links/${link._id}`);
 
       // Refresh the dashboard's data to remove this card
       router.refresh();
