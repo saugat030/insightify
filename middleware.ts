@@ -4,7 +4,7 @@ import { NextResponse, NextRequest } from "next/server";
 const REFRESH_TOKEN_COOKIE_NAME = "refreshToken";
 
 // Public routes that don't need authentication
-const publicRoutes = ["/", "/about", "/contact"];
+const publicRoutes = ["/", "/about"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

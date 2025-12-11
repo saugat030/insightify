@@ -7,9 +7,8 @@ import {
   useEffect,
   ReactNode,
   useCallback,
-  useRef,
 } from "react";
-import axios from "axios";
+import axiosInstance, { setAccessToken } from "@/lib/axiosInstance";
 
 interface User {
   id: string;
@@ -34,34 +33,14 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [accessToken, setAccessTokenState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // --- FIX: Use a ref to store the interceptor ID ---
-  const interceptorId = useRef<number | null>(null);
-
-  // --- FIX: Wrap setAuthToken in useCallback to make it stable ---
-  // This function will set the token in state
-  // and also update the axios interceptor safely.
-  const setAuthToken = useCallback((token: string | null) => {
-    setAccessToken(token);
-
-    // --- FIX: Eject the *previous* interceptor if it exists ---
-    if (interceptorId.current !== null) {
-      axios.interceptors.request.eject(interceptorId.current);
-    }
-
-    // --- FIX: Add the new interceptor and store its ID ---
-    interceptorId.current = axios.interceptors.request.use(
-      (config) => {
-        if (token) {
-          config.headers["Authorization"] = `Bearer ${token}`;
-        }
-        return config;
-      },
-      (error) => Promise.reject(error)
-    );
-  }, []); // This is stable: it only uses a state setter and a ref.
+  // Update both local state and axios instance when token changes
+  const updateAccessToken = useCallback((token: string | null) => {
+    setAccessTokenState(token);
+    setAccessToken(token); // Update axios instance
+  }, []);
 
   // --- 1. Load User on Mount ---
   // This runs when the app first loads to check if
@@ -70,50 +49,63 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setIsLoading(true);
     try {
       // 1. Try to get a new access token
-      const res = await axios.post("/api/auth/refresh");
+      const res = await axiosInstance.post("/api/auth/refresh");
       const newAccessToken = res.data.accessToken;
-      setAuthToken(newAccessToken); // This function is now stable
+      updateAccessToken(newAccessToken);
 
       // 2. Use the new token to get user data
-      const userRes = await axios.get("/api/auth/me");
+      const userRes = await axiosInstance.get("/api/auth/me");
       setUser(userRes.data);
     } catch (error) {
       // If refresh fails, they are logged out
       setUser(null);
-      setAuthToken(null); // This function is now stable
+      updateAccessToken(null);
     } finally {
       setIsLoading(false);
     }
-  }, [setAuthToken]); // --- FIX: Add stable setAuthToken as dependency
+  }, [updateAccessToken]);
 
   useEffect(() => {
     loadUserOnMount();
-  }, [loadUserOnMount]); // --- FIX: This now correctly runs only once
+  }, [loadUserOnMount]);
 
-  // --- 2. Login Function ---
-  // --- FIX: Wrap in useCallback for performance ---
+  // --- 2. Listen for token refresh failures from axios interceptor ---
+  useEffect(() => {
+    const handleTokenRefreshFailed = () => {
+      // Logout the user when token refresh fails
+      setUser(null);
+      updateAccessToken(null);
+    };
+
+    window.addEventListener("auth:token-refresh-failed", handleTokenRefreshFailed);
+
+    return () => {
+      window.removeEventListener("auth:token-refresh-failed", handleTokenRefreshFailed);
+    };
+  }, [updateAccessToken]);
+
+  // --- 3. Login Function ---
   const login = useCallback(
     async (email: string, password: string) => {
       try {
-        const res = await axios.post("/api/auth/login", { email, password });
+        const res = await axiosInstance.post("/api/auth/login", { email, password });
         const { user, accessToken } = res.data;
 
         setUser(user);
-        setAuthToken(accessToken);
+        updateAccessToken(accessToken);
       } catch (error: any) {
         console.error("Login failed:", error);
         throw new Error(error.response?.data?.error || "Login failed");
       }
     },
-    [setAuthToken] // --- FIX: Add stable dependency
+    [updateAccessToken]
   );
 
-  // --- 3. Register Function ---
-  // --- FIX: Wrap in useCallback for performance ---
+  // --- 4. Register Function ---
   const register = useCallback(
     async (username: string, email: string, password: string) => {
       try {
-        await axios.post("/api/auth/register", { username, email, password });
+        await axiosInstance.post("/api/auth/register", { username, email, password });
         // After successful registration, log them in
         await login(email, password);
       } catch (error: any) {
@@ -121,22 +113,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         throw new Error(error.response?.data?.error || "Registration failed");
       }
     },
-    [login] // --- FIX: Add stable dependency
+    [login]
   );
 
-  // --- 4. Logout Function ---
-  // --- FIX: Wrap in useCallback for performance ---
+  // --- 5. Logout Function ---
   const logout = useCallback(async () => {
     try {
-      await axios.post("/api/auth/logout");
+      await axiosInstance.post("/api/auth/logout");
     } catch (error) {
       console.error("Logout failed on server:", error);
     } finally {
       // Always log out on client
       setUser(null);
-      setAuthToken(null);
+      updateAccessToken(null);
     }
-  }, [setAuthToken]); // --- FIX: Add stable dependency
+  }, [updateAccessToken]);
 
   const value = {
     user,
