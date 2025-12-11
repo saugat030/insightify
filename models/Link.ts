@@ -1,4 +1,3 @@
-// models/Link.ts
 import { Schema, models, model } from "mongoose";
 
 const LinkSchema = new Schema({
@@ -33,7 +32,7 @@ const LinkSchema = new Schema({
   },
 });
 
-// Index the user field for fast querying of a user's links
+// index the user field for fast querying of a user's links.
 LinkSchema.index({ user: 1 });
 
 export default models.Link || model("Link", LinkSchema);
