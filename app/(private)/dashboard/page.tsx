@@ -1,7 +1,7 @@
-// app/dashboard/page.tsx
+"use client";
 import { Header } from "@/app/_components/Header";
-import { NewLinkForm } from "@/app/_components/NewLinkForm"; // We will create this next
-import { DashboardClient } from "@/app/_components/DashboardClient"; // We will create this after
+import { NewLinkForm } from "@/app/_components/NewLinkForm";
+import { DashboardClient } from "@/app/_components/DashboardClient";
 
 // This page is automatically protected by our middleware.
 // We don't need any special auth checks here.

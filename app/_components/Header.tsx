@@ -1,6 +1,7 @@
 // app/_components/Header.tsx
 "use client";
 
+"use client";
 import { useAuth } from "@/hooks/useAuth";
 import Link from "next/link";
 

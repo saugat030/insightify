@@ -1,23 +1,18 @@
-// lib/axiosInstance.ts
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 
-// Create axios instance
 const axiosInstance = axios.create({
-  baseURL: "/", // Since we're using Next.js API routes
+  baseURL: "/", // since using Next.js API routes
   timeout: 10000,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
-// Token management - will be set by useAuth hook
 let currentAccessToken: string | null = null;
 let tokenRefreshPromise: Promise<string> | null = null;
 
-/**
- * Set the current access token
- * This function is called by the useAuth hook when the token changes
- */
+// this function is called by the useAuth hook when the token changes
+
 export function setAccessToken(token: string | null) {
   currentAccessToken = token;
 }
@@ -37,10 +32,10 @@ async function refreshAccessToken(): Promise<string> {
   try {
     const response = await axios.post("/api/auth/refresh");
     const newAccessToken = response.data.accessToken;
-    
+
     // Update the current token
     currentAccessToken = newAccessToken;
-    
+
     return newAccessToken;
   } catch (error) {
     // If refresh fails, clear the token
@@ -65,9 +60,8 @@ axiosInstance.interceptors.request.use(
   }
 );
 
-/**
- * Response interceptor - handles 401 errors and automatic token refresh
- */
+// handle 401 errors and automatic token refresh
+
 axiosInstance.interceptors.response.use(
   (response) => {
     // If response is successful, just return it
@@ -85,6 +79,7 @@ axiosInstance.interceptors.response.use(
 
       // Skip refresh for auth endpoints to prevent infinite loops
       if (
+        originalRequest.url?.includes("/api/auth/me") ||
         originalRequest.url?.includes("/api/auth/login") ||
         originalRequest.url?.includes("/api/auth/register") ||
         originalRequest.url?.includes("/api/auth/refresh")

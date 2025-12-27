@@ -1,4 +1,3 @@
-// app/_components/DashboardClient.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -6,7 +5,7 @@ import axiosInstance from "@/lib/axiosInstance";
 import { useAuth } from "@/hooks/useAuth";
 import { LinkCard } from "./LinkCard";
 
-// Define the type for a Link object
+// define the type for a Link object
 type Link = {
   _id: string;
   url: string;

@@ -1,7 +1,6 @@
 import { Schema, models, model } from "mongoose";
 
 const LinkSchema = new Schema({
-  // Reference to the User who owns this link
   user: {
     type: Schema.Types.ObjectId,
     ref: "User",
@@ -16,14 +15,14 @@ const LinkSchema = new Schema({
     required: true,
   },
   imageUrl: {
-    type: String, // This is optional
+    type: String, // optional
   },
   aiSummary: {
-    type: [String], // An array of bullet points
+    type: [String], // array of bullet points
     default: [],
   },
   aiTags: {
-    type: [String], // An array of keywords
+    type: [String], // array of keywords
     default: [],
   },
   createdAt: {
@@ -32,7 +31,6 @@ const LinkSchema = new Schema({
   },
 });
 
-// index the user field for fast querying of a user's links.
 LinkSchema.index({ user: 1 });
 
 export default models.Link || model("Link", LinkSchema);

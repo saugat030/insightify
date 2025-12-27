@@ -7,6 +7,7 @@ const REFRESH_TOKEN_COOKIE_NAME = "refreshToken";
 const publicRoutes = ["/", "/about"];
 
 export async function middleware(req: NextRequest) {
+  console.log("Middleware hit");
   const { pathname } = req.nextUrl;
 
   const token = req.cookies.get(REFRESH_TOKEN_COOKIE_NAME);

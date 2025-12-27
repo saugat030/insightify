@@ -1,10 +1,10 @@
-// app/login/page.tsx
 "use client";
 
 import { useState, FormEvent, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { AxiosError } from "axios";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -17,6 +17,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!isAuthLoading && user) {
+      // save where the user was previously eg /login?from=/settings
       const from = searchParams.get("from");
       router.push(from || "/dashboard");
     }
@@ -35,12 +36,13 @@ export default function LoginPage() {
       await login(email, password);
       const from = searchParams.get("from");
       router.push(from || "/dashboard");
-    } catch (err: any) {
-      setError(err.message || "An unknown error occurred.");
+    } catch (err) {
+      const error = err as AxiosError<{ message?: string }>;
+      setError(error.message || "An unknown error occurred.");
     }
   };
 
-  // Loading State
+  // loading : user is authenticated, and the page is waiting for the useEffect to redirect. It also shows the loading screen during this very brief moment.
   if (isAuthLoading || (!isAuthLoading && user)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black text-white">
@@ -56,24 +58,12 @@ export default function LoginPage() {
     <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-background text-foreground selection:bg-white/20">
       {/* Background FX */}
       <div className="noise" />
-      <div className="bg-grid absolute inset-0 opacity-20" />
+      <div className="bg-grid absolute inset-0 opacity-40" />
 
       {/* Main Card */}
       <div className="relative z-10 w-full max-w-sm rounded-xl border border-white/10 bg-zinc-900/50 p-8 shadow-2xl backdrop-blur-md">
-        {/* Header */}
         <div className="mb-8 text-center">
-          <Link href="/" className="mb-6 inline-block">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-black">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                className="h-6 w-6"
-              >
-                <path d="M11.25 4.533A9.707 9.707 0 006 3a9.735 9.735 0 00-3.25.555.75.75 0 00-.5.707v14.25a.75.75 0 001 .75c.799 0 1.571-.059 2.308-.17 1.348-.204 2.651-.621 3.868-1.22l.509-.254.55-.274a7.973 7.973 0 012.525 0l.55.274.509.254a14.394 14.394 0 003.868 1.22c.736.111 1.509.17 2.308.17a.75.75 0 001-.75V4.262a.75.75 0 00-.5-.707A9.735 9.735 0 0018 3a9.707 9.707 0 00-5.25 1.533v8.152l-.46.23c-1.222.608-2.673.608-3.895 0l-.46-.23V4.533zM12 14.73a6.45 6.45 0 00-1.954-.954l-1.636-.546a.75.75 0 00-.316 1.41l1.635.546c.55.183 1.13.315 1.725.392v-3.79c0-.414.336-.75.75-.75s.75.336.75.75v3.79c.594-.077 1.174-.21 1.725-.392l1.635-.546a.75.75 0 00-.316-1.41l-1.636.546c-.672.224-1.326.544-1.954.954z" />
-              </svg>
-            </div>
-          </Link>
+          <Link href="/" className="mb-6 inline-block"></Link>
           <h1 className="text-2xl font-semibold tracking-tight text-white">
             Welcome back
           </h1>

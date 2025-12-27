@@ -9,6 +9,7 @@ import {
   useCallback,
 } from "react";
 import axiosInstance, { setAccessToken } from "@/lib/axiosInstance";
+import { useRouter } from "next/navigation";
 
 interface User {
   id: string;
@@ -36,6 +37,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [accessToken, setAccessTokenState] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const router = useRouter();
   // Update both local state and axios instance when token changes
   const updateAccessToken = useCallback((token: string | null) => {
     setAccessTokenState(token);
@@ -69,7 +71,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     loadUserOnMount();
   }, [loadUserOnMount]);
 
-  // --- 2. Listen for token refresh failures from axios interceptor ---
+  // Listen for token refresh failures from axios interceptor ---
   useEffect(() => {
     const handleTokenRefreshFailed = () => {
       // Logout the user when token refresh fails
@@ -77,18 +79,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       updateAccessToken(null);
     };
 
-    window.addEventListener("auth:token-refresh-failed", handleTokenRefreshFailed);
+    window.addEventListener(
+      "auth:token-refresh-failed",
+      handleTokenRefreshFailed
+    );
 
     return () => {
-      window.removeEventListener("auth:token-refresh-failed", handleTokenRefreshFailed);
+      window.removeEventListener(
+        "auth:token-refresh-failed",
+        handleTokenRefreshFailed
+      );
     };
   }, [updateAccessToken]);
 
-  // --- 3. Login Function ---
   const login = useCallback(
     async (email: string, password: string) => {
       try {
-        const res = await axiosInstance.post("/api/auth/login", { email, password });
+        const res = await axiosInstance.post("/api/auth/login", {
+          email,
+          password,
+        });
         const { user, accessToken } = res.data;
 
         setUser(user);
@@ -101,12 +111,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     [updateAccessToken]
   );
 
-  // --- 4. Register Function ---
   const register = useCallback(
     async (username: string, email: string, password: string) => {
       try {
-        await axiosInstance.post("/api/auth/register", { username, email, password });
-        // After successful registration, log them in
+        await axiosInstance.post("/api/auth/register", {
+          username,
+          email,
+          password,
+        });
+        // after successful registration, log them in
         await login(email, password);
       } catch (error: any) {
         console.error("Registration failed:", error);
@@ -116,16 +129,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     [login]
   );
 
-  // --- 5. Logout Function ---
   const logout = useCallback(async () => {
     try {
       await axiosInstance.post("/api/auth/logout");
+      router.push("/login");
     } catch (error) {
       console.error("Logout failed on server:", error);
     } finally {
-      // Always log out on client
+      // clear client data
       setUser(null);
       updateAccessToken(null);
+      // router.push("/login");
     }
   }, [updateAccessToken]);
 
@@ -141,7 +155,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// --- Custom Hook ---
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {

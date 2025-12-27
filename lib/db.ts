@@ -1,7 +1,5 @@
-// lib/db.ts
 import mongoose from "mongoose";
 
-// We need to type the cached connection
 interface MongooseCache {
   conn: typeof mongoose | null;
   promise: Promise<typeof mongoose> | null;
