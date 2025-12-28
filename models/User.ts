@@ -7,6 +7,16 @@ const UserSchema = new Schema({
     required: [true, "Username is required."],
     trim: true,
   },
+  role: {
+    type: String,
+    enum: ["admin", "user"],
+    default: "user",
+  },
+  profilePicture: {
+    type: String,
+    required: false,
+    default: null,
+  },
   email: {
     type: String,
     unique: true,

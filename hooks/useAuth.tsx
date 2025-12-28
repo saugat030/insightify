@@ -13,6 +13,8 @@ import { useRouter } from "next/navigation";
 
 interface User {
   id: string;
+  role: "admin" | "user";
+  profilePicture: string | null;
   username: string;
   email: string;
 }
