@@ -1,5 +1,6 @@
-import Sidebar from "../_components/private/sidebar";
-import Header from "../_components/Header";
+import Sidebar from "../../_components/private/sidebar";
+import Header from "../../_components/Header";
+import RoleGuard from "@/app/_components/private/rolegaurd";
 
 export default function PrivateLayout({
   children,
@@ -7,7 +8,7 @@ export default function PrivateLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <>
+    <RoleGuard allowedRoles={["user"]}>
       <div className="flex h-screen w-full bg-nexus-900 overflow-hidden relative selection:bg-cyan-500/30">
         {/* ambient background glows */}
         <div className="fixed top-0 left-0 w-full h-full pointer-events-none z-0 overflow-hidden">
@@ -22,6 +23,6 @@ export default function PrivateLayout({
           </main>
         </div>
       </div>
-    </>
+    </RoleGuard>
   );
 }

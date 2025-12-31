@@ -1,4 +1,3 @@
-// middleware.ts
 import { NextResponse, NextRequest } from "next/server";
 
 const REFRESH_TOKEN_COOKIE_NAME = "refreshToken";
@@ -27,11 +26,9 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Case 1: User is on an auth page (login/register)
+  // user is on an auth page (login/register)
   if (isAuthPage) {
-    if (hasToken) {
-      return NextResponse.redirect(new URL("/dashboard", req.url));
-    }
+    // Let the client-side handle the redirect so it can check roles
     return NextResponse.next();
   }
 

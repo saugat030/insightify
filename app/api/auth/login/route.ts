@@ -70,11 +70,7 @@ export async function POST(req: Request) {
       {
         message: "Login successful",
         accessToken,
-        user: {
-          id: user._id,
-          username: user.username,
-          email: user.email,
-        },
+        user,
       },
       { status: 200 }
     );

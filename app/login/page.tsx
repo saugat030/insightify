@@ -15,11 +15,14 @@ export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  //check if the user is already logged in. We cant be allowing em to see the login page after already being logged in.
   useEffect(() => {
     if (!isAuthLoading && user) {
       // save where the user was previously eg /login?from=/settings
       const from = searchParams.get("from");
-      router.push(from || "/dashboard");
+      user.role === "admin"
+        ? router.push(from || "/admin/dashboard")
+        : router.push(from || "/dashboard");
     }
   }, [user, isAuthLoading, router, searchParams]);
 
@@ -33,9 +36,13 @@ export default function LoginPage() {
     }
 
     try {
-      await login(email, password);
+      const user = await login(email, password);
       const from = searchParams.get("from");
-      router.push(from || "/dashboard");
+      if (user.role === "admin") {
+        router.push(from || "/admin/dashboard");
+      } else {
+        router.push(from || "/dashboard");
+      }
     } catch (err) {
       const error = err as AxiosError<{ message?: string }>;
       setError(error.message || "An unknown error occurred.");

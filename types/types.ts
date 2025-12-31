@@ -5,6 +5,7 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   path: string;
+  allowedRoles: ("admin" | "user")[];
 }
 
 export interface StatData {

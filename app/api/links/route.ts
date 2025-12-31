@@ -6,7 +6,7 @@ import { verifyAccessToken, AccessTokenPayload } from "@/lib/auth";
 import { scrapeUrl } from "@/lib/scraper";
 import { getAiAnalysis } from "@/lib/gemini";
 
-// --- GET: Fetch all links for the logged-in user ---
+// Fetch all links for the logged-in user ---
 export async function GET(req: NextRequest) {
   try {
     // 1. Verify Authentication

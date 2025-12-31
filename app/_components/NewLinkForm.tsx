@@ -43,28 +43,43 @@ export function NewLinkForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="flex flex-col gap-3">
         <input
           type="url"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://your-article-url.com"
-          className="flex-grow rounded-md border border-gray-300 p-3 text-gray-900 focus:border-blue-500 focus:ring-blue-500"
+          className="w-full rounded-lg border border-white/10 bg-black/40 p-3 text-white placeholder-zinc-600 focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all"
           required
           disabled={isLoading}
         />
         <button
           type="submit"
           disabled={isLoading}
-          className="rounded-lg bg-blue-600 px-5 py-3 text-center text-sm font-medium text-white hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 disabled:bg-gray-400"
+          className="w-full rounded-lg bg-white py-3 text-sm font-bold text-black hover:bg-zinc-200 disabled:opacity-50 transition-colors"
         >
-          {isLoading ? "Saving..." : "Save Link"}
+          {isLoading ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
+              Saving...
+            </span>
+          ) : (
+            "Save Link"
+          )}
         </button>
       </div>
 
       {/* Feedback Messages */}
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {success && <p className="text-sm text-green-600">{success}</p>}
+      {error && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-500">
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-500">
+          {success}
+        </div>
+      )}
     </form>
   );
 }

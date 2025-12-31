@@ -47,14 +47,20 @@ export function LinkCard({ link }: LinkCardProps) {
 
   // ... (rest of the return JSX is the same)
   return (
-    <div className="relative overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-all hover:shadow-md">
+    <div className="group relative overflow-hidden rounded-xl border border-white/10 bg-nexus-900/30 backdrop-blur-sm transition-all hover:border-white/20 hover:bg-nexus-900/50">
       {/* Optional Image Header */}
       {link.imageUrl && (
-        <a href={link.url} target="_blank" rel="noopener noreferrer">
+        <a
+          href={link.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block relative"
+        >
+          <div className="absolute inset-0 bg-gradient-to-t from-nexus-900/80 to-transparent opacity-60" />
           <img
             src={link.imageUrl}
             alt={link.title}
-            className="h-40 w-full object-cover"
+            className="h-40 w-full object-cover transition-transform duration-500 group-hover:scale-105"
             onError={(e) => (e.currentTarget.style.display = "none")} // Hide broken images
           />
         </a>
@@ -66,24 +72,32 @@ export function LinkCard({ link }: LinkCardProps) {
           href={link.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="group"
+          className="block mb-4"
         >
-          <h3 className="mb-1 text-lg font-bold text-gray-900 group-hover:text-blue-600">
+          <h3 className="mb-1 text-lg font-bold text-white transition-colors group-hover:text-cyan-400 line-clamp-2">
             {link.title}
           </h3>
-          <p className="mb-3 truncate text-sm text-gray-500 group-hover:text-blue-500">
+          <p className="truncate text-xs font-mono text-zinc-500 group-hover:text-zinc-400">
             {link.url}
           </p>
         </a>
 
         {/* AI Summary */}
-        <div className="mb-4">
-          <h4 className="mb-2 text-xs font-semibold uppercase text-gray-400">
-            AI Summary
-          </h4>
-          <ul className="list-inside list-disc space-y-1">
+        <div className="mb-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="h-px flex-1 bg-white/5" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-600">
+              AI Summary
+            </span>
+            <div className="h-px flex-1 bg-white/5" />
+          </div>
+          <ul className="space-y-1.5">
             {link.aiSummary.map((point, index) => (
-              <li key={index} className="text-sm text-gray-700">
+              <li
+                key={index}
+                className="text-sm text-slate-400 leading-relaxed flex items-start gap-2"
+              >
+                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-cyan-500/50" />
                 {point}
               </li>
             ))}
@@ -91,13 +105,13 @@ export function LinkCard({ link }: LinkCardProps) {
         </div>
 
         {/* AI Tags */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-white/5">
           {link.aiTags.map((tag) => (
             <span
               key={tag}
-              className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600"
+              className="rounded-full bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-0.5 text-xs font-medium text-cyan-400"
             >
-              {tag}
+              #{tag}
             </span>
           ))}
         </div>
@@ -106,7 +120,7 @@ export function LinkCard({ link }: LinkCardProps) {
         <button
           onClick={handleDelete}
           disabled={isDeleting}
-          className="absolute right-3 top-3 rounded-full bg-black/50 p-1.5 text-white/70 backdrop-blur-sm transition-all hover:bg-red-600 hover:text-white disabled:opacity-50"
+          className="absolute right-3 top-3 rounded-full bg-black/50 p-2 text-white/50 backdrop-blur-md transition-all hover:bg-red-500/20 hover:text-red-400 disabled:opacity-50 opacity-0 group-hover:opacity-100"
           title="Delete link"
         >
           {/* Simple X icon */}
@@ -120,7 +134,7 @@ export function LinkCard({ link }: LinkCardProps) {
           </svg>
         </button>
 
-        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
       </div>
     </div>
   );

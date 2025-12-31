@@ -12,6 +12,12 @@ const UserSchema = new Schema({
     enum: ["admin", "user"],
     default: "user",
   },
+  tier: {
+    type: String,
+    enum: ["free", "pro"],
+    default: "free",
+    required: false,
+  },
   profilePicture: {
     type: String,
     required: false,

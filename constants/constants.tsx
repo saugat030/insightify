@@ -2,11 +2,12 @@ import {
   LayoutDashboard,
   Users,
   Activity,
-  Box,
   Globe,
   DollarSign,
   ShieldCheck,
   Link,
+  User,
+  Settings,
 } from "lucide-react";
 import { NavItem, StatData, Transaction, RevenueData } from "@/types/types";
 
@@ -15,11 +16,44 @@ export const NAV_ITEMS: NavItem[] = [
     id: "dashboard",
     label: "Dashboard",
     icon: LayoutDashboard,
-    path: "/dashboard",
+    path: "/admin/dashboard",
+    allowedRoles: ["admin"],
   },
-  { id: "links", label: "Links", icon: Link, path: "/links" },
-  { id: "media", label: "Media", icon: Users, path: "/media" },
-  { id: "products", label: "Products", icon: Box, path: "/products" },
+  {
+    id: "user-dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    path: "/dashboard",
+    allowedRoles: ["user"],
+  },
+  {
+    id: "links",
+    label: "Links",
+    icon: Link,
+    path: "/links",
+    allowedRoles: ["user"],
+  },
+  {
+    id: "users",
+    label: "Users",
+    icon: User,
+    path: "/admin/users",
+    allowedRoles: ["admin"],
+  },
+  {
+    id: "media",
+    label: "Media",
+    icon: Users,
+    path: "/media",
+    allowedRoles: ["user"],
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    icon: Settings,
+    path: "/settings",
+    allowedRoles: ["admin", "user"],
+  },
 ];
 
 export const STATS: StatData[] = [

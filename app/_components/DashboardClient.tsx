@@ -61,24 +61,24 @@ export function DashboardClient() {
     return (
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* Skeleton Card */}
-        <div className="h-64 animate-pulse rounded-lg bg-gray-200"></div>
-        <div className="h-64 animate-pulse rounded-lg bg-gray-200"></div>
-        <div className="h-64 animate-pulse rounded-lg bg-gray-200"></div>
+        <div className="h-64 animate-pulse rounded-2xl bg-white/5 border border-white/5"></div>
+        <div className="h-64 animate-pulse rounded-2xl bg-white/5 border border-white/5"></div>
+        <div className="h-64 animate-pulse rounded-2xl bg-white/5 border border-white/5"></div>
       </div>
     );
   }
 
   // 3. Show an error message if fetching failed
   if (error) {
-    return <p className="text-red-600">{error}</p>;
+    return <p className="text-red-400">{error}</p>;
   }
 
   // 4. Show a message if there are no links
   if (links.length === 0) {
     return (
-      <div className="text-center text-gray-500">
-        <p>You haven't saved any links yet.</p>
-        <p>Use the form above to add your first one!</p>
+      <div className="text-center text-slate-400 py-12">
+        <p className="mb-2">You haven't saved any links yet.</p>
+        <p className="text-sm">Use the form to add your first resource.</p>
       </div>
     );
   }

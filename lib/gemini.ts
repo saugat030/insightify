@@ -1,4 +1,3 @@
-// lib/gemini.ts
 import {
   GoogleGenerativeAI,
   HarmCategory,
@@ -53,7 +52,7 @@ export async function getAiAnalysis(
 ): Promise<{ summary: string[]; tags: string[] }> {
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-pro-latest",
+      model: "gemini-2.5-flash",
       generationConfig,
       safetySettings,
     });

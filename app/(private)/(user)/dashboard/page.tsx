@@ -48,7 +48,7 @@ export default function DashboardPage() {
 
       {/* Promo/Extra Section */}
       <div className="nexus-card rounded-2xl p-8 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-purple-600/20 to-cyan-600/20 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-linear-to-br from-purple-600/20 to-cyan-600/20 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2" />
         <div className="relative z-10 flex flex-col md:flex-row items-center justify-between">
           <div>
             <h3 className="text-xl font-bold text-white mb-2 flex items-center">

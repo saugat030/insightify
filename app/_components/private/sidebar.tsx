@@ -4,10 +4,17 @@ import { useSidebarStore } from "@/store/useSidebarStore";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { NAV_ITEMS } from "@/constants/constants";
+import { useAuth } from "@/hooks/useAuth";
 
 const Sidebar = () => {
   const { collapsed, toggleCollapsed } = useSidebarStore();
+  const { user, isLoading } = useAuth();
   const pathname = usePathname();
+
+  if (isLoading) return <div className="w-64 bg-gray-100 animate-pulse" />;
+  const visibleItems = NAV_ITEMS.filter(
+    (item) => user && item.allowedRoles.includes(user.role)
+  );
 
   return (
     <aside
@@ -25,10 +32,10 @@ const Sidebar = () => {
         }`}
       >
         <Link href="/dashboard" className="relative group cursor-pointer block">
-          {/* We wrap logo in Link to dashboard */}
+          {/* wrap logo in link to dashboard */}
           <div className="flex items-center">
             <div className="relative group cursor-pointer">
-              <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500 to-purple-600 rounded-lg blur opacity-40 group-hover:opacity-75 transition duration-200" />
+              <div className="absolute -inset-1 bg-linear-to-r from-cyan-500 to-purple-600 rounded-lg blur opacity-40 group-hover:opacity-75 transition duration-200" />
               <div className="relative bg-nexus-900 rounded-lg p-2 flex items-center justify-center border border-white/10">
                 <Hexagon className="w-6 h-6 text-cyan-400 fill-cyan-400/20" />
               </div>
@@ -47,9 +54,9 @@ const Sidebar = () => {
         </Link>
       </div>
 
-      {/* Navigation */}
+      {/* navigation */}
       <nav className="flex-1 py-6 px-3 space-y-2 overflow-y-auto overflow-x-hidden">
-        {NAV_ITEMS.map((item) => {
+        {visibleItems.map((item) => {
           const isActive = pathname === item.path;
           return (
             <Link
@@ -59,7 +66,7 @@ const Sidebar = () => {
                 group flex items-center w-full p-3 rounded-xl transition-all duration-300 relative overflow-hidden
                 ${
                   isActive
-                    ? "bg-gradient-to-r from-cyan-500/10 to-blue-500/5 text-cyan-400 border border-cyan-500/20"
+                    ? "bg-linear-to-r from-cyan-500/10 to-blue-500/5 text-cyan-400 border border-cyan-500/20"
                     : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
                 }
               `}
@@ -97,7 +104,7 @@ const Sidebar = () => {
 
               {/* Hover effect background */}
               {!isActive && (
-                <div className="absolute inset-0 bg-white/5 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300 rounded-xl" />
+                <div className="absolute inset-0 bg-white/5 -translate-x-full group-hover:translate-x-0 transition-transform duration-300 rounded-xl" />
               )}
             </Link>
           );
