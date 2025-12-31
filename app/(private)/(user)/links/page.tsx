@@ -30,7 +30,7 @@ const LinkPage = () => {
           <div className="nexus-card bg-nexus-900/50 border border-white/10 rounded-2xl p-6 backdrop-blur-sm sticky top-8">
             <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
               Add New
-              <div className="h-px flex-grow bg-white/10" />
+              <div className="h-px grow bg-white/10" />
             </h2>
             <NewLinkForm />
           </div>

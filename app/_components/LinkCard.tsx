@@ -1,11 +1,9 @@
-// app/_components/LinkCard.tsx
 "use client";
 
 import { useState } from "react";
 import axiosInstance from "@/lib/axiosInstance";
-import { useRouter } from "next/navigation"; // <-- FIX: 'from' not 'in'
+import { useRouter } from "next/navigation";
 
-// Define the type for a Link object, matching our API/model
 type Link = {
   _id: string;
   url: string;
@@ -33,19 +31,13 @@ export function LinkCard({ link }: LinkCardProps) {
     setIsDeleting(true);
     setError(null);
     try {
-      // The access token is automatically added by our axios interceptor
       await axiosInstance.delete(`/api/links/${link._id}`);
-
-      // Refresh the dashboard's data to remove this card
       router.refresh();
     } catch (err: any) {
-      // <-- FIX: Removed stray 'S'
       setError(err.response?.data?.error || "Failed to delete link.");
       setIsDeleting(false);
     }
   };
-
-  // ... (rest of the return JSX is the same)
   return (
     <div className="group relative overflow-hidden rounded-xl border border-white/10 bg-nexus-900/30 backdrop-blur-sm transition-all hover:border-white/20 hover:bg-nexus-900/50">
       {/* Optional Image Header */}
