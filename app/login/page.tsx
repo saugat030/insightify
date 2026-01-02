@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, FormEvent, useEffect } from "react";
+import { useState, FormEvent, useEffect, Suspense } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AxiosError } from "axios";
 
-export default function LoginPage() {
+// separate the logic into a standalone component
+function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -15,10 +16,8 @@ export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  //check if the user is already logged in. We cant be allowing em to see the login page after already being logged in.
   useEffect(() => {
     if (!isAuthLoading && user) {
-      // save where the user was previously eg /login?from=/settings
       const from = searchParams.get("from");
       user.role === "admin"
         ? router.push(from || "/admin/dashboard")
@@ -49,7 +48,7 @@ export default function LoginPage() {
     }
   };
 
-  // loading : user is authenticated, and the page is waiting for the useEffect to redirect. It also shows the loading screen during this very brief moment.
+  // reusing your loading state logic
   if (isAuthLoading || (!isAuthLoading && user)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black text-white">
@@ -63,11 +62,9 @@ export default function LoginPage() {
 
   return (
     <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-background text-foreground selection:bg-white/20">
-      {/* Background FX */}
       <div className="noise" />
       <div className="bg-grid absolute inset-0 opacity-40" />
 
-      {/* Main Card */}
       <div className="relative z-10 w-full max-w-sm rounded-xl border border-white/10 bg-zinc-900/50 p-8 shadow-2xl backdrop-blur-md">
         <div className="mb-8 text-center">
           <Link href="/" className="mb-6 inline-block"></Link>
@@ -79,7 +76,6 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="rounded border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-500">
@@ -149,7 +145,6 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Footer */}
         <div className="mt-8 text-center text-sm text-zinc-500">
           First time here?{" "}
           <Link
@@ -161,5 +156,26 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// define a loading fallback for the suspense boundary
+function LoadingState() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-black text-white">
+      <div className="flex flex-col items-center gap-4">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-white border-t-transparent" />
+        <p className="font-mono text-xs text-zinc-500">LOADING...</p>
+      </div>
+    </div>
+  );
+}
+
+// export the page component wrapping the form in suspense
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoadingState />}>
+      <LoginForm />
+    </Suspense>
   );
 }
