@@ -4,16 +4,18 @@ import Link from "@/models/Link";
 import { verifyAccessToken, AccessTokenPayload } from "@/lib/auth";
 import mongoose from "mongoose";
 
-interface Params {
-  params: { id: string };
+interface RouteContext {
+  params: Promise<{ id: string }>;
 }
 
-export async function DELETE(req: NextRequest, { params }: Params) {
+export async function DELETE(req: NextRequest, { params }: RouteContext) {
   try {
-    const { id } = params;
+    const { id } = await params;
+
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json({ error: "Invalid link ID" }, { status: 400 });
     }
+
     const authHeader = req.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -35,8 +37,7 @@ export async function DELETE(req: NextRequest, { params }: Params) {
       return NextResponse.json({ error: "Link not found" }, { status: 404 });
     }
 
-    //verify ownership
-    // making sure the link's user field matches the token's userId
+    // verify ownership
     if (link.user.toString() !== payload.userId) {
       return NextResponse.json(
         { error: "Forbidden: You don't own this link" },
