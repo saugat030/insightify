@@ -63,7 +63,7 @@ UserSchema.pre("save", async function (next) {
 UserSchema.methods.comparePassword = async function (
   candidatePassword: string
 ) {
-  // 'this.password' is accessible here because we'll explicitly select it
+  // 'this.password' is accessible here because we explicitly selected it in the login route or any other route.
   return await bcrypt.compare(candidatePassword, this.password);
 };
 

@@ -20,6 +20,7 @@ export function generateAccessToken(payload: AccessTokenPayload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: "15m" });
 }
 
+//returns access token's payload or just returns null incase of invalid token.
 export function verifyAccessToken(token: string): AccessTokenPayload | null {
   try {
     return jwt.verify(token, JWT_SECRET) as AccessTokenPayload;
@@ -28,10 +29,8 @@ export function verifyAccessToken(token: string): AccessTokenPayload | null {
   }
 }
 
-/**
- * Generates a long-lived Refresh Token JWT.
- * The payload contains the userId and a unique token ID (jti).
- */
+//Generates a long-lived Refresh Token JWT. the payload contains the userId and a unique token ID (jti).
+
 export function generateRefreshToken(payload: { userId: string }): {
   token: string;
   jti: string;
@@ -48,7 +47,7 @@ export function generateRefreshToken(payload: { userId: string }): {
   return { token, jti };
 }
 
-// verifies the Refresh Token JWT. Returns the payload if the signature is valid.
+// verifies the refresh token JWT. returns the payload if the signature is valid.
 export function verifyRefreshToken(token: string): RefreshTokenPayload | null {
   try {
     return jwt.verify(token, JWT_REFRESH_SECRET) as RefreshTokenPayload;

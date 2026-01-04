@@ -21,6 +21,7 @@ export async function POST(req: Request) {
     }
 
     await connectToDb();
+    //we need to manually select the password as well so that out this.password can be accessed from the user model.
     const user = await User.findOne({ email }).select("+password");
 
     if (!user || !(await user.comparePassword(password))) {
@@ -30,13 +31,13 @@ export async function POST(req: Request) {
       );
     }
 
-    // 1. Generate Access Token (short-lived)
+    // generate Access Token
     const accessToken = generateAccessToken({
       userId: user._id,
       email: user.email,
     });
 
-    // 2. Generate Refresh Token (long-lived) and its unique ID (jti)
+    // generate Refresh Token (long-lived) and its unique ID (jti)
     const { token: refreshTokenString, jti } = generateRefreshToken({
       userId: user._id,
     });
@@ -45,32 +46,37 @@ export async function POST(req: Request) {
       Date.now() + REFRESH_TOKEN_EXPIRATION_DAYS * 24 * 60 * 60 * 1000
     );
 
-    // 3. Clear old refresh tokens for this user
+    // clear old refresh tokens for this user
     await RefreshToken.deleteMany({ user: user._id });
 
-    // 4. Save the new jti (the allow-list entry) to the database
+    // save the new jti (the allow-list entry) to the database
     await RefreshToken.create({
       user: user._id,
       jti: jti,
       expires: expires,
     });
 
-    // 5. Set the Refresh Token in a secure cookie using Next.js 15 cookies API
+    // naya next15 cookie syntax
     const cookieStore = await cookies();
     cookieStore.set(REFRESH_TOKEN_COOKIE_NAME, refreshTokenString, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       path: "/",
       expires: expires,
-      sameSite: "lax", // Changed from "strict" for better compatibility
+      sameSite: "lax", // changed from "strict" for better compatibility
     });
 
-    // 6. Return the access token and user info
+    // const { password, ...userWithoutPassword } = user.toObject();
+    const userObject = user.toObject();
+    delete userObject.password;
+
+    // return the access token and user info
     return NextResponse.json(
       {
+        success: true,
         message: "Login successful",
+        user: userObject,
         accessToken,
-        user,
       },
       { status: 200 }
     );
