@@ -60,13 +60,26 @@ export async function POST(req: NextRequest) {
         { status: 404 },
       );
     }
+    if (!user.canCreateLink()) {
+      return NextResponse.json(
+        {
+          error: `${user.tier} tier limit reached. Please wait for the reset or upgrade.`,
+        },
+        { status: 403 },
+      );
+    }
     if (user.tier === "free" && user.linksCreatedCount >= 2) {
       return NextResponse.json(
         { error: "Free tier limit reached. Please upgrade for more links." },
         { status: 403 },
       );
     }
-
+    if (user.tier === "pro" && user.linksCreatedCount >= 15) {
+      return NextResponse.json(
+        { error: "Pro tier limit reached. Please upgrade for more links." },
+        { status: 403 },
+      );
+    }
     const { url } = await req.json();
     if (!url || typeof url !== "string") {
       return NextResponse.json({ error: "Invalid URL" }, { status: 400 });

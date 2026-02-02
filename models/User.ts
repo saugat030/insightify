@@ -19,7 +19,10 @@ const UserSchema = new Schema({
     required: false,
   },
   linksCreatedCount: { type: Number, default: 0 },
-
+  lastResetDate: {
+    type: Date,
+    default: Date.now,
+  },
   profilePicture: {
     type: String,
     required: false,
@@ -67,6 +70,25 @@ UserSchema.methods.comparePassword = async function (
 ) {
   // 'this.password' is accessible here because we explicitly selected it in the login route or any other route.
   return await bcrypt.compare(candidatePassword, this.password);
+};
+
+UserSchema.methods.canCreateLink = function () {
+  const now = new Date();
+  const timeDiff = now.getTime() - this.lastResetDate.getTime();
+
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const WEEK_MS = 7 * DAY_MS;
+  // check if the reset window has passed
+  const resetWindow = this.tier === "pro" ? DAY_MS : WEEK_MS;
+  if (timeDiff >= resetWindow) {
+    this.linksCreatedCount = 0;
+    this.lastResetDate = now;
+  }
+  // validate against tier limits
+  const limits = { free: 2, pro: 15 };
+  const maxAllowed = limits[this.tier as "free" | "pro"] || 0;
+
+  return this.linksCreatedCount < maxAllowed;
 };
 
 export default models.User || model("User", UserSchema);
