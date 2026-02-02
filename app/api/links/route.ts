@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     if (!payload) {
       return NextResponse.json(
         { error: "Invalid or expired token" },
-        { status: 401 }
+        { status: 401 },
       );
     }
     await connectToDb();
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     console.error("[LINKS_GET_ERROR]", error);
     return NextResponse.json(
       { error: "Internal Server Error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     if (!payload) {
       return NextResponse.json(
         { error: "Invalid or expired token" },
-        { status: 401 }
+        { status: 401 },
       );
     }
     await connectToDb();
@@ -57,18 +57,14 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json(
         { error: "User not found in db" },
-        { status: 404 }
+        { status: 404 },
       );
     }
-    if (user.tier === "free") {
-      console.log("user seems to beon the free side.. Checking his quota");
-      const freeUserLinks = await Link.countDocuments({ user: payload.userId });
-      if (freeUserLinks >= 2) {
-        return NextResponse.json(
-          { error: "Free users cannot create more than 2 links" },
-          { status: 403 }
-        );
-      }
+    if (user.tier === "free" && user.linksCreatedCount >= 2) {
+      return NextResponse.json(
+        { error: "Free tier limit reached. Please upgrade for more links." },
+        { status: 403 },
+      );
     }
 
     const { url } = await req.json();
@@ -77,7 +73,6 @@ export async function POST(req: NextRequest) {
     }
 
     const { title, imageUrl, textContent } = await scrapeUrl(url);
-
     const { summary, tags } = await getAiAnalysis(textContent);
 
     const newLink = await Link.create({
@@ -88,11 +83,14 @@ export async function POST(req: NextRequest) {
       aiSummary: summary,
       aiTags: tags,
     });
+    // increment linksCreatedCount
+    await User.findByIdAndUpdate(payload.userId, {
+      $inc: { linksCreatedCount: 1 },
+    });
 
     return NextResponse.json(newLink, { status: 201 });
   } catch (error: any) {
     console.error("[LINKS_POST_ERROR]", error);
-    // Handle specific errors
     if (
       error.message.includes("scrape") ||
       error.message.includes("AI analysis")
@@ -101,7 +99,7 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json(
       { error: "Internal Server Error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

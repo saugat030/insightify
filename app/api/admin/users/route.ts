@@ -10,7 +10,7 @@ export async function GET(req: Request) {
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return NextResponse.json(
         { error: "Missing Token or invalid header structure." },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -28,21 +28,19 @@ export async function GET(req: Request) {
     if (user.role !== "admin") {
       return NextResponse.json(
         { error: "Unauthorized. Try signing in with an admin account." },
-        { status: 403 }
+        { status: 403 },
       );
     }
-
     const users = await User.find({}).sort({ createdAt: -1 });
-
     return NextResponse.json(
       { success: true, message: "Users fetched successfully", data: users },
-      { status: 200 }
+      { status: 200 },
     );
   } catch (error) {
     console.error("Error fetching users:", error);
     return NextResponse.json(
       { success: false, error: "Internal Server Error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -74,7 +72,7 @@ export async function POST(req: Request) {
     if (!username || !email || !password) {
       return NextResponse.json(
         { error: "Username, email, and password are required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -85,7 +83,7 @@ export async function POST(req: Request) {
     if (existingUser) {
       return NextResponse.json(
         { error: "User with this email or username already exists" },
-        { status: 409 }
+        { status: 409 },
       );
     }
 
@@ -105,7 +103,7 @@ export async function POST(req: Request) {
     console.error("Error creating user:", error);
     return NextResponse.json(
       { error: "Internal Server Error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

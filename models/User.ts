@@ -18,6 +18,8 @@ const UserSchema = new Schema({
     default: "free",
     required: false,
   },
+  linksCreatedCount: { type: Number, default: 0 },
+
   profilePicture: {
     type: String,
     required: false,
@@ -61,7 +63,7 @@ UserSchema.pre("save", async function (next) {
 // this attaches a .comparePassword method in the model itself so that we dont have to import bcrypt and do it there.
 //usage: const isMatch = await user.comparePassword(inputPassword);
 UserSchema.methods.comparePassword = async function (
-  candidatePassword: string
+  candidatePassword: string,
 ) {
   // 'this.password' is accessible here because we explicitly selected it in the login route or any other route.
   return await bcrypt.compare(candidatePassword, this.password);

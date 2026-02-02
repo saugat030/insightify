@@ -27,7 +27,7 @@ async function checkAdmin(req: Request) {
 
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const auth = await checkAdmin(req);
@@ -48,14 +48,14 @@ export async function GET(
     console.error("Error fetching user:", error);
     return NextResponse.json(
       { error: "Internal Server Error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
 export async function PUT(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const auth = await checkAdmin(req);
@@ -77,29 +77,38 @@ export async function PUT(
     if (email) user.email = email;
     if (role) user.role = role;
     if (tier) user.tier = tier;
-    if (password) {
-      // Mongoose pre-save hook will hash this
+    if (password && password.trim().length >= 8) {
       user.password = password;
+    } else if (password) {
+      return NextResponse.json(
+        { success: false, error: "Password must be at least 8 characters" },
+        { status: 400 },
+      );
     }
-
     await user.save();
-
     const updatedUser = user.toObject();
     delete updatedUser.password;
 
-    return NextResponse.json(updatedUser, { status: 200 });
+    return NextResponse.json(
+      {
+        success: true,
+        message: "User updated successfully",
+        data: updatedUser,
+      },
+      { status: 200 },
+    );
   } catch (error) {
     console.error("Error updating user:", error);
     return NextResponse.json(
       { error: "Internal Server Error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
 export async function DELETE(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const auth = await checkAdmin(req);
@@ -117,13 +126,53 @@ export async function DELETE(
 
     return NextResponse.json(
       { message: "User deleted successfully" },
-      { status: 200 }
+      { status: 200 },
     );
   } catch (error) {
     console.error("Error deleting user:", error);
     return NextResponse.json(
       { error: "Internal Server Error" },
-      { status: 500 }
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const auth = await checkAdmin(req);
+    if (auth.error) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+
+    const { id } = await params;
+    const body = await req.json();
+    const { tier } = body;
+    const validTiers = ["free", "pro"];
+    if (!tier || !validTiers.includes(tier)) {
+      return NextResponse.json(
+        { error: `Invalid tier. Must be one of: ${validTiers.join(", ")}` },
+        { status: 400 },
+      );
+    }
+    const user = await User.findById(id);
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+    user.tier = tier;
+    await user.save();
+
+    return NextResponse.json(
+      { message: `User tier updated to ${tier}`, tier: user.tier },
+      { status: 200 },
+    );
+  } catch (error) {
+    console.error("Error updating user tier:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
     );
   }
 }
