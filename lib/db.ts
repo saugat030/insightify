@@ -1,4 +1,7 @@
 import mongoose from "mongoose";
+import dns from "dns";
+
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
 interface MongooseCache {
   conn: typeof mongoose | null;
@@ -18,13 +21,16 @@ if (!cached) {
 }
 
 async function connectToDb() {
+  console.log("Trying to connect to the db");
   // If we have a cached connection, return it
   if (cached.conn) {
+    console.log("Already connected to db");
     return cached.conn;
   }
 
   // If there's no connection promise, create one
   if (!cached.promise) {
+    console.log("Creating new connection promise");
     const MONGODB_URI = process.env.MONGODB_URI;
 
     if (!MONGODB_URI) {
