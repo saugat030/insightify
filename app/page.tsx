@@ -7,7 +7,7 @@ import Link from "next/link";
 
 export default function HomePage() {
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-background text-foreground selection:bg-white/20">
+    <div className="relative min-h-screen w-full overflow-hidden bg-background text-foreground selection:bg-white/20 font-outfit">
       {/* Background Texture */}
       <div className="noise" />
       <div className="bg-grid fixed inset-0 z-0 opacity-20" />
@@ -30,7 +30,7 @@ export default function HomePage() {
           <div className="relative mx-auto max-w-4xl overflow-hidden rounded-3xl border border-white/10 bg-zinc-900/50 px-6 py-24 backdrop-blur-xl">
             <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_center,var(--tw-gradient-stops))] from-blue-900/20 via-transparent to-transparent"></div>
             <div className="relative z-10 flex flex-col items-center">
-              <h2 className="text-5xl font-bold tracking-tight text-white mb-6">
+              <h2 className="text-5xl font-bold tracking-tight text-white mb-6 font-oswald">
                 Build your <br />
                 <span className="text-zinc-500">Second Brain.</span>
               </h2>

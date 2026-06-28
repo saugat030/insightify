@@ -12,6 +12,8 @@
 
 @theme inline {
   --color-background: var(--background);
+  --font-oswald: var(--font-oswald);
+  --font-outfit: var(--font-outfit);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);

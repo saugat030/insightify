@@ -6,14 +6,14 @@ import { useState, useRef, useEffect } from "react";
 
 export default function PricingPage() {
   return (
-    <div className="relative min-h-screen w-full bg-background text-foreground selection:bg-white/20">
+    <div className="relative min-h-screen w-full bg-background text-foreground selection:bg-white/20 font-outfit">
       <div className="noise" />
       <div className="bg-grid fixed inset-0 z-0 opacity-20" />
       <Navbar />
 
       <main className="relative z-10 pt-32 pb-24">
         <section className="container mx-auto px-6 text-center mb-16">
-          <h1 className="text-4xl font-bold tracking-tight text-white mb-6">
+          <h1 className="text-4xl font-bold tracking-tight text-white mb-6 font-oswald">
             Stop Managing <br />
             <span className="text-gradient">Digital Clutter.</span>
           </h1>
@@ -32,8 +32,8 @@ export default function PricingPage() {
         <section className="container mx-auto px-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
              {/* Free Tier */}
-             <div className="group relative rounded-2xl border border-white/10 bg-black/50 p-8 backdrop-blur hover:border-white/20 transition-all">
-                <h3 className="text-lg font-semibold text-zinc-400">Starter</h3>
+              <div className="group relative rounded-2xl border border-white/10 bg-black/50 p-8 backdrop-blur hover:border-white/20 transition-all">
+                 <h3 className="text-lg font-semibold text-zinc-400 font-oswald">Starter</h3>
                 <div className="mt-4 flex items-baseline text-white">
                    <span className="text-4xl font-bold tracking-tight">$0</span>
                    <span className="ml-1 text-xl text-zinc-500">/mo</span>
@@ -48,11 +48,11 @@ export default function PricingPage() {
              </div>
 
              {/* Pro Tier (Highlighted) */}
-             <div className="group relative rounded-2xl border border-blue-500/50 bg-black p-8 shadow-2xl shadow-blue-900/20">
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-blue-600 px-3 py-1 text-xs font-bold text-white uppercase tracking-wide">
-                   Most Popular
-                </div>
-                <h3 className="text-lg font-semibold text-white">Pro</h3>
+              <div className="group relative rounded-2xl border border-blue-500/50 bg-black p-8 shadow-2xl shadow-blue-900/20">
+                 <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-blue-600 px-3 py-1 text-xs font-bold text-white uppercase tracking-wide">
+                    Most Popular
+                 </div>
+                 <h3 className="text-lg font-semibold text-white font-oswald">Pro</h3>
                 <div className="mt-4 flex items-baseline text-white">
                    <span className="text-4xl font-bold tracking-tight">$12</span>
                    <span className="ml-1 text-xl text-zinc-500">/mo</span>
@@ -68,8 +68,8 @@ export default function PricingPage() {
              </div>
 
              {/* Enterprise Tier */}
-             <div className="group relative rounded-2xl border border-white/10 bg-black/50 p-8 backdrop-blur hover:border-white/20 transition-all">
-                <h3 className="text-lg font-semibold text-zinc-400">Team</h3>
+              <div className="group relative rounded-2xl border border-white/10 bg-black/50 p-8 backdrop-blur hover:border-white/20 transition-all">
+                 <h3 className="text-lg font-semibold text-zinc-400 font-oswald">Team</h3>
                 <div className="mt-4 flex items-baseline text-white">
                    <span className="text-4xl font-bold tracking-tight">$49</span>
                    <span className="ml-1 text-xl text-zinc-500">/mo</span>

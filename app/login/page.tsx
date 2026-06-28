@@ -61,14 +61,14 @@ function LoginForm() {
   }
 
   return (
-    <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-background text-foreground selection:bg-white/20">
+    <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-background text-foreground selection:bg-white/20 font-outfit">
       <div className="noise" />
       <div className="bg-grid absolute inset-0 opacity-40" />
 
       <div className="relative z-10 w-full max-w-sm rounded-xl border border-white/10 bg-zinc-900/50 p-8 shadow-2xl backdrop-blur-md">
         <div className="mb-8 text-center">
           <Link href="/" className="mb-6 inline-block"></Link>
-          <h1 className="text-2xl font-semibold tracking-tight text-white">
+          <h1 className="text-2xl font-semibold tracking-tight text-white font-oswald">
             Welcome back
           </h1>
           <p className="mt-2 text-sm text-zinc-500">

@@ -43,7 +43,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-background text-foreground selection:bg-white/20">
+    <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-background text-foreground selection:bg-white/20 font-outfit">
       {/* Background FX */}
       <div className="noise" />
       <div className="bg-grid absolute inset-0 opacity-20" />
@@ -64,7 +64,7 @@ export default function RegisterPage() {
               </svg>
             </div>
           </Link>
-          <h1 className="text-2xl font-semibold tracking-tight text-white">
+          <h1 className="text-2xl font-semibold tracking-tight text-white font-oswald">
             Create an account
           </h1>
           <p className="mt-2 text-sm text-zinc-500">

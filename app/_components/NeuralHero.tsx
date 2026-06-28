@@ -45,15 +45,7 @@ export function NeuralHero() {
 
       {/* Main Content */}
       <div className="relative z-10 text-center px-6 max-w-5xl mx-auto">
-        <div className="animate-reveal inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-zinc-400 backdrop-blur-md mb-8">
-           <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-            </span>
-            Neural Interface v3.0 Online
-        </div>
-
-        <h1 className="animate-reveal delay-100 text-6xl md:text-8xl font-bold tracking-tight text-white mb-6 leading-tight">
+        <h1 className="animate-reveal delay-100 text-6xl md:text-8xl font-bold tracking-tight text-white mb-6 leading-tight font-oswald">
           The <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-white">External Brain</span> <br />
           for the Internet.
         </h1>

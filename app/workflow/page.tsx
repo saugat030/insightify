@@ -6,14 +6,14 @@ import { useState, useEffect } from "react";
 
 export default function WorkflowPage() {
   return (
-    <div className="relative min-h-screen w-full bg-background text-foreground selection:bg-white/20">
+    <div className="relative min-h-screen w-full bg-background text-foreground selection:bg-white/20 font-outfit">
       <div className="noise" />
       <div className="bg-grid fixed inset-0 z-0 opacity-20" />
       <Navbar />
 
       <main className="relative z-10 pt-32 pb-24">
         <section className="container mx-auto px-6 text-center mb-16">
-          <h1 className="text-4xl font-bold tracking-tight text-white mb-6">
+          <h1 className="text-4xl font-bold tracking-tight text-white mb-6 font-oswald">
             From Chaos to <br />
             <span className="text-gradient">Structured Insight.</span>
           </h1>
@@ -112,7 +112,7 @@ function PipelineVisualization() {
 
               {/* Content */}
               <div className="flex-1 text-center md:text-left">
-                <h3 className={`text-xl font-bold mb-2 transition-colors duration-300 ${isActive ? "text-white" : "text-zinc-500"}`}>
+                <h3 className={`text-xl font-bold mb-2 transition-colors duration-300 font-oswald ${isActive ? "text-white" : "text-zinc-500"}`}>
                   {step.title}
                 </h3>
                 <p className="text-zinc-400">
