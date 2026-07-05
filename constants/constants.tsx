@@ -48,6 +48,13 @@ export const NAV_ITEMS: NavItem[] = [
     allowedRoles: ["user"],
   },
   {
+    id: "editor",
+    label: "Editor",
+    icon: Users,
+    path: "/editor",
+    allowedRoles: ["user"],
+  },
+  {
     id: "settings",
     label: "Settings",
     icon: Settings,

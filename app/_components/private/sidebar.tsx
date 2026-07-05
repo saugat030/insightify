@@ -46,9 +46,6 @@ const Sidebar = () => {
                 collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
               }`}
             >
-              <h1 className="font-mono font-bold text-xl tracking-tighter text-white">
-                NEXUS<span className="text-cyan-400">.</span>OS
-              </h1>
             </div>
           </div>
         </Link>

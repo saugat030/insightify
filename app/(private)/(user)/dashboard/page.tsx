@@ -20,13 +20,6 @@ export default function DashboardPage() {
             Welcome back, Admin. Here's what's happening today.
           </p>
         </div>
-
-        <div className="hidden md:flex items-center space-x-2 bg-nexus-800/50 backdrop-blur border border-white/10 px-4 py-2 rounded-lg">
-          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-xs text-emerald-400 font-medium font-mono">
-            SYSTEM ONLINE
-          </span>
-        </div>
       </div>
 
       {/* Stats Grid */}
