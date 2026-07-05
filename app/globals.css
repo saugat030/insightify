@@ -1,4 +1,25 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* change how the ntive ctrl + P works */
+/* @media print {
+  body * {
+    visibility: hidden;
+  }
+  #pdf-preview-area, #pdf-preview-area * {
+    visibility: visible;
+  }
+  #pdf-preview-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+    border: none;
+  }
+} */
 
 :root {
   --background: #050505;

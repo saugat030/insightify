@@ -10,6 +10,9 @@ import {
   Settings,
 } from "lucide-react";
 import { NavItem, StatData, Transaction, RevenueData } from "@/types/types";
+import ScannerComponent from "@/app/_components/ScannerComponent";
+import PipeLineVisualization from "@/app/_components/PipeLineVisualization";
+import TranslateAndExportPreview from "@/app/_components/TranslateAndExportPreview";
 
 export const NAV_ITEMS: NavItem[] = [
   {
@@ -146,3 +149,30 @@ export const TRANSACTIONS: Transaction[] = [
     avatar: "https://picsum.photos/32/32?random=4",
   },
 ];
+
+export const FEATURES_DATA = {
+  scan: {
+    title: "AI & Extraction",
+    desc: "Instant analysis of any URL. We strip the noise and find the signal.",
+    color: "blue",
+    preview: (
+      <ScannerComponent variant="medium" className="h-full w-full" />
+    )
+  },
+  flow: {
+    title: "Workflow",
+    desc: "A seamless pipeline from clipboard to permanent knowledge vault.",
+    color: "purple",
+    preview: (
+      <PipeLineVisualization />
+    )
+  },
+  notes: {
+    title: "Translate & Export",
+    desc: "Translate any Markdown notes instantly. Save them securely in your vault or extract them as a PDF for future reference.",
+    color: "emerald",
+    preview: (
+      <TranslateAndExportPreview />
+    )
+  }
+};
