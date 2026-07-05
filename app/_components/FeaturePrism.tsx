@@ -1,11 +1,10 @@
-// app/_components/FeaturePrism.tsx
 "use client";
-
 import { useState } from "react";
 import Link from "next/link";
+import PipeLineVisualization from "./PipeLineVisualization";
 
 export function FeaturePrism() {
-  const [activeTab, setActiveTab] = useState<"scan" | "flow" | "graph">("scan");
+  const [activeTab, setActiveTab] = useState<"scan" | "flow" | "notes">("scan");
 
   const features = {
     scan: {
@@ -37,40 +36,62 @@ export function FeaturePrism() {
         desc: "A seamless pipeline from clipboard to permanent knowledge vault.",
         color: "purple",
         preview: (
-            <div className="relative h-full w-full flex items-center justify-center">
-                <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 rounded-lg border border-white/10 bg-white/5 flex items-center justify-center">
-                        <svg className="w-6 h-6 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" /></svg>
-                    </div>
-                    <div className="h-[2px] w-8 bg-zinc-800 relative">
-                        <div className="absolute top-1/2 -translate-y-1/2 left-0 h-2 w-2 rounded-full bg-purple-500 animate-marquee" style={{animationDuration: '2s'}}></div>
-                    </div>
-                    <div className="h-12 w-12 rounded-lg border border-purple-500/50 bg-purple-500/10 flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.3)]">
-                        <svg className="w-6 h-6 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                    </div>
-                </div>
-            </div>
+            <PipeLineVisualization />
         )
       },
-      graph: {
-        title: "Order",
-        desc: "Turn scattered links into a structured graph of connected ideas.",
-        color: "orange",
+      // 2. Replaced 'graph' with the new Translation & Export feature
+      notes: {
+        title: "Translate & Export",
+        desc: "Translate any Markdown notes instantly. Save them securely in your vault or extract them as a PDF for future reference.",
+        color: "emerald",
         preview: (
-            <div className="relative h-full w-full p-6">
-                <div className="absolute inset-0 bg-grid opacity-10"></div>
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-24 w-24 rounded-full border border-orange-500/30 flex items-center justify-center">
-                    <div className="h-3 w-3 rounded-full bg-orange-500 shadow-[0_0_10px_orange]"></div>
+<div className="relative h-full w-full p-6 flex flex-col gap-4">
+                {/* Editor Toolbar */}
+                <div className="flex justify-between items-center border-b border-white/10 pb-3">
+                    <div className="flex gap-3">
+                       <span className="text-xs font-mono text-zinc-400 bg-white/5 px-2 py-1 rounded">notes.md</span>
+                       <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded">Preview</span>
+                    </div>
+                    <button className="text-xs font-bold bg-emerald-500 hover:bg-emerald-400 transition-colors text-black px-3 py-1.5 rounded flex items-center gap-2">
+                        ↓ Export PDF
+                    </button>
                 </div>
-                <div className="absolute top-1/3 left-1/3 h-2 w-2 rounded-full bg-zinc-600"></div>
-                <div className="absolute top-2/3 right-1/4 h-2 w-2 rounded-full bg-zinc-600"></div>
-                <svg className="absolute inset-0 w-full h-full opacity-20">
-                    <line x1="50%" y1="50%" x2="33%" y2="33%" stroke="orange" strokeWidth="1" />
-                    <line x1="50%" y1="50%" x2="75%" y2="66%" stroke="orange" strokeWidth="1" />
-                </svg>
+                
+                {/* Split Screen Editor Area */}
+                <div className="flex-1 grid grid-cols-2 gap-6 mt-2">
+                    {/* Left: Original Markdown (Code) */}
+                    <div className="font-mono text-[12px] leading-relaxed text-zinc-500 space-y-1 border-r border-white/5 pr-4">
+                        <p className="text-emerald-400"># Project Roadmap</p>
+                        <br />
+                        <p className="text-zinc-300">**Goals for Q3:**</p>
+                        <p>- Optimize Vector DB queries</p>
+                        <p>- Implement new translation</p>
+                        <br />
+                        <p className="text-zinc-600">{">"} Focus on latency.</p>
+                    </div>
+                    
+                    {/* Right: Rendered UI (Visual) */}
+                    <div className="font-sans text-zinc-300 space-y-3">
+                        <h1 className="text-lg font-bold text-white tracking-tight border-b border-white/10 pb-1">
+                            Project Roadmap
+                        </h1>
+                        <p className="text-[13px] font-semibold text-white">
+                            Goals for Q3:
+                        </p>
+                        <ul className="list-disc list-inside text-[13px] text-zinc-400 space-y-1 marker:text-emerald-500">
+                            <li>Optimize Vector DB queries</li>
+                            <li>Implement new translation</li>
+                        </ul>
+                        <blockquote className="border-l-2 border-emerald-500 pl-3 text-[13px] italic text-zinc-500 mt-2">
+                            "Focus on latency."
+                        </blockquote>
+                    </div>
+                </div>
+                
+                <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black to-transparent pointer-events-none"></div>
             </div>
         )
-     }
+      }
   };
 
   const current = features[activeTab];
@@ -95,6 +116,8 @@ export function FeaturePrism() {
                        <span className={`text-lg font-semibold ${activeTab === key ? "text-white" : "text-zinc-400 group-hover:text-zinc-200"}`}>
                           {features[key].title}
                        </span>
+                       {/* Note: In Tailwind, dynamic template literals like `bg-${color}-500` can sometimes be purged. 
+                           If the dots don't show colors, replace this with a standard mapping object or safe-list the colors. */}
                        {activeTab === key && <span className={`h-2 w-2 rounded-full bg-${features[key].color}-500 shadow-[0_0_10px_currentColor]`}></span>}
                     </div>
                     <p className="text-sm text-zinc-500 leading-relaxed max-w-sm">
@@ -105,8 +128,9 @@ export function FeaturePrism() {
            </div>
            
            <div className="mt-8 pl-6">
-              <Link href={`/${activeTab === 'scan' ? 'features' : activeTab === 'flow' ? 'workflow' : 'pricing'}`} className="text-sm font-medium text-white border-b border-white/20 pb-1 hover:border-white transition-colors">
-                 Explore {features[activeTab].title} →
+              {/* 3. Updated the Link logic to point to a 'tools' or 'notes' route for the final tab */}
+              <Link href={`/${activeTab === 'scan' ? 'features' : activeTab === 'flow' ? 'workflow' : 'tools'}`} className="text-sm font-medium text-white border-b border-white/20 pb-1 hover:border-white transition-colors">
+                 Explore {features[activeTab].title.replace(" (Free)", "")} →
               </Link>
            </div>
         </div>

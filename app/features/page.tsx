@@ -23,7 +23,7 @@ export default function FeaturesPage() {
         </section>
 
         {/* FEATURE 1: CAPTURE & SCAN (The Scanner Component) */}
-        <section className="container mx-auto px-6 mb-32">
+        <section className="container mx-auto px-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
             {/* Text Content */}
             <div className="order-2 lg:order-1">
