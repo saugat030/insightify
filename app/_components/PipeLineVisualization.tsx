@@ -190,7 +190,7 @@ export default function PipelineVisualization() {
           className="bg-zinc-900 fill-white border-zinc-800"
           showInteractive={false}
         />
-        {/* <MiniMap
+        {/*<MiniMap
           nodeColor="#3b82f6"
           maskColor="rgba(0, 0, 0, 0.7)"
           className="bg-zinc-900 border-zinc-800 rounded-xl"
