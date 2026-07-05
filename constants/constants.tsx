@@ -176,3 +176,16 @@ export const FEATURES_DATA = {
     )
   }
 };
+
+export const DEFAULT_MARKDOWN = `# Welcome to the Live Editor
+Start typing on the left, and see the formatting on the right!
+
+## Features
+* **No hacky code:** Clean client-side PDF generation.
+* **Live rendering:** Updates as you type.
+* **Instant Download:** Direct to your machine.
+
+| Column 1 | Column 2 |
+| -------- | -------- |
+| Table    | Support  |
+`;

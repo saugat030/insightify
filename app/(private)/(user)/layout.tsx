@@ -9,7 +9,7 @@ export default function PrivateLayout({
 }>) {
   return (
     <RoleGuard allowedRoles={["user"]}>
-      <div className="flex h-screen w-full bg-nexus-900 overflow-hidden relative selection:bg-cyan-500/30">
+      <div className="flex h-screen w-full bg-nexus-900 overflow-hidden relative selection:bg-cyan-500/30 font-outfit">
         {/* ambient background glows */}
         <div className="fixed top-0 left-0 w-full h-full pointer-events-none z-0 overflow-hidden">
           <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/10 rounded-full blur-[120px]" />

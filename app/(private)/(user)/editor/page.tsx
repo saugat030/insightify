@@ -5,64 +5,54 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Panel, Group, Separator } from 'react-resizable-panels';
 import { marked } from 'marked';
-
-const DEFAULT_MARKDOWN = `# Welcome to the Live Editor
-Start typing on the left, and see the formatting on the right!
-
-## Features
-* **No hacky code:** Clean client-side PDF generation.
-* **Live rendering:** Updates as you type.
-* **Instant Download:** Direct to your machine.
-
-| Column 1 | Column 2 |
-| -------- | -------- |
-| Table    | Support  |
-`;
+import { DEFAULT_MARKDOWN } from '@/constants/constants';
 
 export default function MarkdownEditorPage() {
   const [markdown, setMarkdown] = useState(DEFAULT_MARKDOWN);
+  const [isExporting, setIsExporting] = useState(false);
 
   const handleExportPDF = async () => {
-    // 1. Dynamically import html2pdf ONLY on the client to avoid Next.js SSR errors
-    const html2pdf = (await import('html2pdf.js')).default;
+    try {
+      setIsExporting(true);
 
-    // 2. Convert Markdown to raw HTML
-    const rawHtml = await marked.parse(markdown);
+      // 1. Dynamically import @react-pdf/renderer and react-pdf-html ONLY on the client
+      const { pdf, Document, Page, StyleSheet } = await import('@react-pdf/renderer');
+      const { default: Html } = await import('react-pdf-html');
+      
+      // 2. Convert Markdown to raw HTML
+      const rawHtml = await marked.parse(markdown);
 
-    // 3. Create a temporary, invisible DOM element
-    const element = document.createElement('div');
-    element.innerHTML = rawHtml;
-    
-    // 4. Apply SAFE, standard CSS (No Tailwind lab() colors here!)
-    // This ensures your PDF looks clean and standard without crashing the canvas engine
-    element.style.padding = '20px';
-    element.style.fontFamily = 'Helvetica, Arial, sans-serif';
-    element.style.lineHeight = '1.6';
-    element.style.color = '#000000'; // Safe hex color
+      // 3. Define PDF styling
+      const styles = StyleSheet.create({
+        page: { padding: 40, fontFamily: 'Helvetica', fontSize: 12, color: '#333' },
+      });
 
-    // Basic styling for tables in the PDF
-    const styles = document.createElement('style');
-    styles.innerHTML = `
-      h1, h2, h3 { margin-bottom: 10px; font-weight: bold; }
-      h1 { font-size: 24px; }
-      h2 { font-size: 20px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
-      table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
-      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-      th { background-color: #f2f2f2; }
-      code { background-color: #f4f4f4; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
-    `;
-    element.appendChild(styles);
+      // 4. Create the Document structure
+      const MyDocument = (
+        <Document>
+          <Page size="A4" style={styles.page}>
+            <Html>{rawHtml}</Html>
+          </Page>
+        </Document>
+      );
 
-    // 5. Configure and download the PDF instantly
-   const opt = {
-      margin:       0.5,
-      filename:     'markdown-export.pdf',
-      image:        { type: 'jpeg' as const, quality: 0.98 }, 
-      html2canvas:  { scale: 2, useCORS: true },
-      jsPDF:        { unit: 'in' as const, format: 'letter', orientation: 'portrait' as const } 
-    };
-
-    html2pdf().set(opt).from(element).save();
+      // 5. Generate and download PDF
+      const asPdf = pdf(MyDocument);
+      const blob = await asPdf.toBlob();
+      
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'markdown-export.pdf';
+      link.click();
+      
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      console.error("PDF Export failed:", error);
+      alert("Failed to export PDF.");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -75,9 +65,10 @@ export default function MarkdownEditorPage() {
         </h1>
         <button
           onClick={handleExportPDF}
-          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition-colors"
+          disabled={isExporting}
+          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Export to PDF
+          {isExporting ? "Exporting..." : "Export to PDF"}
         </button>
       </header>
 
