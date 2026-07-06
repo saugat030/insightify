@@ -45,11 +45,15 @@ const safetySettings = [
 /**
  * Analyzes article text using the Gemini API.
  * @param articleText The text content of the article to analyze.
- * @returns A promise that resolves to an object with { summary, tags }.
+ * @param category The category of the link.
+ * @param keyword Optional keyword to emphasize.
+ * @returns A promise that resolves to an object with { summary, tags, extraInfo }.
  */
 export async function getAiAnalysis(
-  articleText: string
-): Promise<{ summary: string[]; tags: string[] }> {
+  articleText: string,
+  category: string,
+  keyword: string
+): Promise<{ summary: string[]; tags: string[]; extraInfo: string }> {
   try {
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
@@ -58,9 +62,13 @@ export async function getAiAnalysis(
     });
 
     const prompt = `
-      You are an expert summarizer. Based on the following article text, please return a JSON object with two keys:
+      You are an expert summarizer and knowledge assistant. Based on the following article text, please return a JSON object with three keys:
       1. "summary": A concise 3-bullet-point summary of the article as an array of strings.
       2. "tags": An array of 5 relevant string keywords for categorization.
+      3. "extraInfo": A short paragraph (2-3 sentences) providing extra, external knowledge related to the category "${category}". ${keyword ? `Specifically, provide external knowledge about "${keyword}".` : 'Provide a general interesting fact related to the article.'}
+
+      The user has categorized this article as: ${category}.
+      ${keyword ? `They have requested special emphasis on the keyword: "${keyword}". Make sure to mention or emphasize this keyword in the summary if relevant.` : ''}
 
       Article Text: """
       ${articleText.substring(0, 3000)}

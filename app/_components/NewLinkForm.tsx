@@ -7,6 +7,8 @@ import axiosInstance from "@/lib/axiosInstance";
 
 export function NewLinkForm() {
   const [url, setUrl] = useState("");
+  const [category, setCategory] = useState("Technology");
+  const [keyword, setKeyword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -22,11 +24,13 @@ export function NewLinkForm() {
     try {
       // The access token is automatically added by
       // the axios interceptor from our AuthProvider
-      const response = await axiosInstance.post("/api/links", { url });
+      const response = await axiosInstance.post("/api/links", { url, category, keyword });
 
       // Handle success
       setSuccess(`Saved "${response.data.title}"!`);
       setUrl(""); // Clear the input
+      setKeyword("");
+      setCategory("Technology");
 
       // This is key:
       // It tells Next.js to re-fetch the data for this page (in our
@@ -51,6 +55,24 @@ export function NewLinkForm() {
           placeholder="https://your-article-url.com"
           className="w-full rounded-lg border border-white/10 bg-black/40 p-3 text-white placeholder-zinc-600 focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all"
           required
+          disabled={isLoading}
+        />
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="w-full rounded-lg border border-white/10 bg-black/40 p-3 text-white placeholder-zinc-600 focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all appearance-none"
+          disabled={isLoading}
+        >
+          {["Technology", "Science", "Gaming", "Geography", "Education", "Entertainment", "Health", "Other"].map(cat => (
+             <option key={cat} value={cat} className="bg-nexus-900">{cat}</option>
+          ))}
+        </select>
+        <input
+          type="text"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          placeholder="Specific keyword (optional)"
+          className="w-full rounded-lg border border-white/10 bg-black/40 p-3 text-white placeholder-zinc-600 focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all"
           disabled={isLoading}
         />
         <button

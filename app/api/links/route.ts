@@ -80,13 +80,13 @@ export async function POST(req: NextRequest) {
         { status: 403 },
       );
     }
-    const { url } = await req.json();
+    const { url, category, keyword } = await req.json();
     if (!url || typeof url !== "string") {
       return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
     }
 
     const { title, imageUrl, textContent } = await scrapeUrl(url);
-    const { summary, tags } = await getAiAnalysis(textContent);
+    const { summary, tags, extraInfo } = await getAiAnalysis(textContent, category || "Other", keyword || "");
 
     const newLink = await Link.create({
       user: payload.userId,
@@ -95,6 +95,9 @@ export async function POST(req: NextRequest) {
       imageUrl,
       aiSummary: summary,
       aiTags: tags,
+      category: category || "Other",
+      keyword: keyword || "",
+      aiExtraInfo: extraInfo || "",
     });
     // increment linksCreatedCount
     await User.findByIdAndUpdate(payload.userId, {

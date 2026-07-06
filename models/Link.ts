@@ -25,6 +25,18 @@ const LinkSchema = new Schema({
     type: [String], // array of keywords
     default: [],
   },
+  category: {
+    type: String,
+    default: "Other",
+  },
+  keyword: {
+    type: String,
+    default: "",
+  },
+  aiExtraInfo: {
+    type: String,
+    default: "",
+  },
   createdAt: {
     type: Date,
     default: Date.now,
