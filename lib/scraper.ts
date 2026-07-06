@@ -40,24 +40,23 @@ export async function scrapeUrl(url: string): Promise<ScrapedData> {
 
     // 3. Scrape the main content
     // Try common article containers first
-    let textContent = $("article").text() || $("main").text();
+    let textContent = $("article").text() || $("main").text() || $("#wiki-content-block").text() || $(".mw-parser-output").text();
+
+    if (!textContent || textContent.trim().length < 500) {
+      // Remove noisy elements before grabbing body text
+      $("script").remove();
+      $("style").remove();
+      $("nav").remove();
+      $("footer").remove();
+      $("header").remove();
+      $("iframe").remove();
+      $("[role='navigation']").remove();
+      
+      textContent = $("body").text();
+    }
 
     // Clean up whitespace and newlines
     textContent = textContent.replace(/\s\s+/g, " ").trim();
-
-    // 4. Fallback if primary selectors fail
-    if (textContent.length < 200) {
-      const description =
-        $('meta[property="og:description"]').attr("content") ||
-        $('meta[name="description"]').attr("content");
-
-      if (description) {
-        textContent = description;
-      } else if (textContent.length < 100) {
-        // As a last resort, just use the body text, but it might be noisy
-        textContent = $("body").text().replace(/\s\s+/g, " ").trim();
-      }
-    }
 
     if (!title || !textContent) {
       throw new Error(

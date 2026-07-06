@@ -56,7 +56,7 @@ export async function getAiAnalysis(
 ): Promise<{ summary: string[]; tags: string[]; extraInfo: string }> {
   try {
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.5-flash-lite",
       generationConfig,
       safetySettings,
     });
@@ -65,13 +65,19 @@ export async function getAiAnalysis(
       You are an expert summarizer and knowledge assistant. Based on the following article text, please return a JSON object with three keys:
       1. "summary": A concise 3-bullet-point summary of the article as an array of strings.
       2. "tags": An array of 5 relevant string keywords for categorization.
-      3. "extraInfo": A short paragraph (2-3 sentences) providing extra, external knowledge related to the category "${category}". ${keyword ? `Specifically, provide external knowledge about "${keyword}".` : 'Provide a general interesting fact related to the article.'}
+      3. "extraInfo": A short paragraph (2-3 sentences) of additional information.
 
       The user has categorized this article as: ${category}.
-      ${keyword ? `They have requested special emphasis on the keyword: "${keyword}". Make sure to mention or emphasize this keyword in the summary if relevant.` : ''}
+      ${keyword ? `
+      CRITICAL INSTRUCTION: The user has requested special emphasis on the keyword: "${keyword}". 
+      - If the keyword represents an attribute (like "Location", "Stats", "History") of the article's main subject, extract that specific information from the article and include it in your summary. For example, if the article is about a 'Sword' and the keyword is 'Location', tell the user where the sword is located based on the article.
+      - In the "extraInfo" field, provide fascinating, external knowledge about the main subject of the article combined with the keyword, providing context that might not be in the text itself. Do not just define what the word "${keyword}" means in a vacuum.
+      ` : `
+      - In the "extraInfo" field, provide a general interesting, external fact related to the main subject of the article.
+      `}
 
       Article Text: """
-      ${articleText.substring(0, 3000)}
+      ${articleText.substring(0, 25000)}
       """
 
       Return *only* the valid JSON object and nothing else.

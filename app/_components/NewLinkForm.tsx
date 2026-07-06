@@ -1,6 +1,4 @@
-// app/_components/NewLinkForm.tsx
 "use client";
-
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import axiosInstance from "@/lib/axiosInstance";
@@ -47,58 +45,65 @@ export function NewLinkForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="flex flex-col gap-3">
-        <input
-          type="url"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://your-article-url.com"
-          className="w-full rounded-lg border border-white/10 bg-black/40 p-3 text-white placeholder-zinc-600 focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all"
-          required
-          disabled={isLoading}
-        />
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="w-full rounded-lg border border-white/10 bg-black/40 p-3 text-white placeholder-zinc-600 focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all appearance-none"
-          disabled={isLoading}
-        >
-          {["Technology", "Science", "Gaming", "Geography", "Education", "Entertainment", "Health", "Other"].map(cat => (
-             <option key={cat} value={cat} className="bg-nexus-900">{cat}</option>
-          ))}
-        </select>
-        <input
-          type="text"
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          placeholder="Specific keyword (optional)"
-          className="w-full rounded-lg border border-white/10 bg-black/40 p-3 text-white placeholder-zinc-600 focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all"
-          disabled={isLoading}
-        />
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="w-full rounded-lg bg-white py-3 text-sm font-bold text-black hover:bg-zinc-200 disabled:opacity-50 transition-colors"
-        >
-          {isLoading ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
-              Saving...
-            </span>
-          ) : (
-            "Save Link"
-          )}
-        </button>
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+        <div className="md:col-span-5">
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="Paste your link here (https://...)"
+            className="w-full rounded-xl border border-white/10 bg-black/40 p-4 text-white placeholder-zinc-500 focus:border-cyan-500/50 focus:bg-black/60 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all shadow-inner"
+            required
+            disabled={isLoading}
+          />
+        </div>
+        <div className="md:col-span-3">
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="w-full rounded-xl border border-white/10 bg-black/40 p-4 text-white placeholder-zinc-500 focus:border-cyan-500/50 focus:bg-black/60 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all appearance-none shadow-inner"
+            disabled={isLoading}
+          >
+            {["Technology", "Science", "Gaming", "Geography", "Education", "Entertainment", "Health", "Other"].map(cat => (
+               <option key={cat} value={cat} className="bg-nexus-900">{cat}</option>
+            ))}
+          </select>
+        </div>
+        <div className="md:col-span-4 relative flex">
+          <input
+            type="text"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            placeholder="Specific keyword (optional)"
+            className="w-full rounded-xl border border-white/10 bg-black/40 p-4 pr-32 text-white placeholder-zinc-500 focus:border-cyan-500/50 focus:bg-black/60 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all shadow-inner"
+            disabled={isLoading}
+          />
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="absolute right-1.5 top-1.5 bottom-1.5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 px-6 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50 transition-all shadow-lg shadow-cyan-500/20"
+          >
+            {isLoading ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              </span>
+            ) : (
+              "Save"
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Feedback Messages */}
       {error && (
-        <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-500">
+        <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-500 flex items-center gap-2">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
           {error}
         </div>
       )}
       {success && (
-        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-500">
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-500 flex items-center gap-2">
+           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
           {success}
         </div>
       )}

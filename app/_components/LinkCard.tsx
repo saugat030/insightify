@@ -11,6 +11,9 @@ type Link = {
   imageUrl?: string;
   aiSummary: string[];
   aiTags: string[];
+  category?: string;
+  keyword?: string;
+  aiExtraInfo?: string;
   createdAt: string;
 };
 
@@ -39,69 +42,115 @@ export function LinkCard({ link }: LinkCardProps) {
     }
   };
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-white/10 bg-nexus-900/30 backdrop-blur-sm transition-all hover:border-white/20 hover:bg-nexus-900/50">
+    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/5 bg-black/40 backdrop-blur-xl transition-all duration-300 hover:border-cyan-500/30 hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:shadow-cyan-500/10 hover:-translate-y-1">
       {/* Optional Image Header */}
-      {link.imageUrl && (
+      {link.imageUrl ? (
         <a
           href={link.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="block relative"
+          className="block relative h-48 overflow-hidden"
         >
-          <div className="absolute inset-0 bg-linear-to-t from-nexus-900/80 to-transparent opacity-60" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent z-10" />
           <img
             src={link.imageUrl}
             alt={link.title}
-            className="h-40 w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
             onError={(e) => (e.currentTarget.style.display = "none")} // Hide broken images
           />
+          
+          {/* Category Badge over image */}
+          {link.category && (
+             <div className="absolute top-4 left-4 z-20">
+               <span className="inline-flex items-center rounded-full bg-black/50 backdrop-blur-md px-3 py-1 text-xs font-semibold text-white border border-white/10 shadow-lg">
+                 {link.category}
+               </span>
+             </div>
+          )}
         </a>
+      ) : (
+        /* Category Badge if no image */
+        link.category && (
+           <div className="pt-5 px-6">
+             <span className="inline-flex items-center rounded-full bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-400 border border-cyan-500/20">
+               {link.category}
+             </span>
+           </div>
+        )
       )}
 
-      <div className="p-5">
+      <div className="flex flex-col flex-1 p-6">
         {/* Title and URL */}
         <a
           href={link.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="block mb-4"
+          className="block mb-6"
         >
-          <h3 className="mb-1 text-lg font-bold text-white transition-colors group-hover:text-cyan-400 line-clamp-2">
+          <h3 className="mb-2 text-xl font-bold text-white transition-colors group-hover:text-cyan-400 line-clamp-2 leading-snug">
             {link.title}
           </h3>
-          <p className="truncate text-xs font-mono text-zinc-500 group-hover:text-zinc-400">
+          <p className="truncate text-sm font-mono text-zinc-500 group-hover:text-zinc-400">
             {link.url}
           </p>
         </a>
 
         {/* AI Summary */}
-        <div className="mb-4 space-y-2">
-          <div className="flex items-center gap-2">
-            <div className="h-px flex-1 bg-white/5" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-600">
-              AI Summary
+        <div className="mb-6 space-y-4 flex-1">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+              Key Insights
             </span>
-            <div className="h-px flex-1 bg-white/5" />
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
           </div>
-          <ul className="space-y-1.5">
-            {link.aiSummary.map((point, index) => (
-              <li
-                key={index}
-                className="text-sm text-slate-400 leading-relaxed flex items-start gap-2"
-              >
-                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-cyan-500/50" />
-                {point}
-              </li>
-            ))}
+          <ul className="space-y-3">
+            {link.aiSummary.map((point, index) => {
+              // Highlight the keyword if present
+              let renderedPoint: React.ReactNode = point;
+              if (link.keyword && link.keyword.trim() !== "") {
+                 const regex = new RegExp(`(${link.keyword})`, "gi");
+                 const parts = point.split(regex);
+                 renderedPoint = parts.map((part, i) => 
+                   regex.test(part) ? <strong key={i} className="text-cyan-300 bg-cyan-500/10 px-1 py-0.5 rounded-md font-semibold">{part}</strong> : part
+                 );
+              }
+              return (
+                <li
+                  key={index}
+                  className="text-sm text-slate-300 leading-relaxed flex items-start gap-3"
+                >
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+                  <span>{renderedPoint}</span>
+                </li>
+              );
+            })}
           </ul>
         </div>
 
+        {/* Extra Info */}
+        {link.aiExtraInfo && (
+           <div className="mb-6 rounded-xl bg-gradient-to-br from-purple-500/10 to-blue-500/5 border border-purple-500/20 p-4 shadow-inner relative overflow-hidden">
+             {/* decorative blur */}
+             <div className="absolute -top-4 -right-4 w-16 h-16 bg-purple-500/20 blur-2xl rounded-full" />
+             <div className="relative z-10">
+               <div className="flex items-center gap-2 mb-2">
+                  <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                  <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">Deep Dive</span>
+               </div>
+               <p className="text-sm text-purple-100/80 leading-relaxed">
+                 {link.aiExtraInfo}
+               </p>
+             </div>
+           </div>
+        )}
+
         {/* AI Tags */}
-        <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-white/5">
+        <div className="flex flex-wrap items-center gap-2 mt-auto pt-4 border-t border-white/5">
           {link.aiTags.map((tag) => (
             <span
               key={tag}
-              className="rounded-full bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-0.5 text-xs font-medium text-cyan-400"
+              className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-default border border-white/5"
             >
               #{tag}
             </span>
@@ -112,7 +161,7 @@ export function LinkCard({ link }: LinkCardProps) {
         <button
           onClick={handleDelete}
           disabled={isDeleting}
-          className="absolute right-3 top-3 rounded-full bg-black/50 p-2 text-white/50 backdrop-blur-md transition-all hover:bg-red-500/20 hover:text-red-400 disabled:opacity-50 opacity-0 group-hover:opacity-100"
+          className="absolute right-4 top-4 z-30 rounded-full bg-black/60 p-2 text-white/70 backdrop-blur-md transition-all hover:bg-red-500 hover:text-white disabled:opacity-50 opacity-0 group-hover:opacity-100 shadow-lg"
           title="Delete link"
         >
           {/* Simple X icon */}
@@ -126,7 +175,7 @@ export function LinkCard({ link }: LinkCardProps) {
           </svg>
         </button>
 
-        {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+        {error && <p className="mt-3 text-sm text-red-400 font-medium bg-red-500/10 p-2 rounded-lg">{error}</p>}
       </div>
     </div>
   );
