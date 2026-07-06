@@ -81,7 +81,7 @@ export function NewLinkForm() {
           <button
             type="submit"
             disabled={isLoading}
-            className="absolute right-1.5 top-1.5 bottom-1.5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 px-6 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50 transition-all shadow-lg shadow-cyan-500/20"
+            className="absolute right-1.5 top-1.5 bottom-1.5 rounded-lg bg-green-600 px-6 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50 transition-all shadow-lg shadow-cyan-500/20"
           >
             {isLoading ? (
               <span className="flex items-center justify-center gap-2">

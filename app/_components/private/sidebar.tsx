@@ -1,8 +1,9 @@
 "use client";
-import { ChevronLeft, ChevronRight, Hexagon } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useSidebarStore } from "@/store/useSidebarStore";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { NAV_ITEMS } from "@/constants/constants";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -13,7 +14,7 @@ const Sidebar = () => {
 
   if (isLoading) return <div className="w-64 bg-gray-100 animate-pulse" />;
   const visibleItems = NAV_ITEMS.filter(
-    (item) => user && item.allowedRoles.includes(user.role)
+    (item) => user && item.allowedRoles.includes(user.role),
   );
 
   return (
@@ -25,31 +26,18 @@ const Sidebar = () => {
         ${collapsed ? "w-20" : "w-64"}
       `}
     >
-      {/* logo area */}
-      <div
-        className={`flex items-center h-20 px-6 ${
-          collapsed ? "justify-center" : "justify-start"
-        }`}
+      <Link
+        href="/dashboard"
+        className="cursor-pointer relative justify-center flex items-center h-20 w-20"
       >
-        <Link href="/dashboard" className="relative group cursor-pointer block">
-          {/* wrap logo in link to dashboard */}
-          <div className="flex items-center">
-            <div className="relative group cursor-pointer">
-              <div className="absolute -inset-1 bg-linear-to-r from-cyan-500 to-purple-600 rounded-lg blur opacity-40 group-hover:opacity-75 transition duration-200" />
-              <div className="relative bg-nexus-900 rounded-lg p-2 flex items-center justify-center border border-white/10">
-                <Hexagon className="w-6 h-6 text-cyan-400 fill-cyan-400/20" />
-              </div>
-            </div>
-
-            <div
-              className={`ml-3 overflow-hidden transition-all duration-300 ${
-                collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
-              }`}
-            >
-            </div>
-          </div>
-        </Link>
-      </div>
+        <Image
+          src="/assets/insightify-final.png"
+          alt="Insightify Logo"
+          fill
+          className="object-cover"
+          priority
+        />
+      </Link>
 
       {/* navigation */}
       <nav className="flex-1 py-6 px-3 space-y-2 overflow-y-auto overflow-x-hidden">
