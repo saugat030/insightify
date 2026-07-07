@@ -26,10 +26,7 @@ const Sidebar = () => {
         ${collapsed ? "w-20" : "w-64"}
       `}
     >
-      <Link
-        href="/dashboard"
-        className="cursor-pointer relative justify-center flex items-center h-20 w-20"
-      >
+      <div className="relative justify-center flex items-center h-20 w-20 mx-auto">
         <Image
           src="/assets/insightify-final.png"
           alt="Insightify Logo"
@@ -37,7 +34,7 @@ const Sidebar = () => {
           className="object-cover"
           priority
         />
-      </Link>
+      </div>
 
       {/* navigation */}
       <nav className="flex-1 py-6 px-3 space-y-2 overflow-y-auto overflow-x-hidden">

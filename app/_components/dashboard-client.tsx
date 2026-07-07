@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import axiosInstance from "@/lib/axiosInstance";
 import { useAuth } from "@/hooks/useAuth";
-import { LinkCard } from "./LinkCard";
+import { LinkCard } from "./link-card";
 
 // define the type for a Link object
 type Link = {

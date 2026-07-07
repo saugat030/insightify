@@ -43,10 +43,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-background text-foreground selection:bg-white/20 font-outfit">
-      {/* Background FX */}
-      <div className="noise" />
-      <div className="bg-grid absolute inset-0 opacity-20" />
+    <div className="relative flex min-h-screen w-full flex-col items-center justify-center">
 
       {/* Main Card */}
       <div className="relative z-10 w-full max-w-sm rounded-xl border border-white/10 bg-zinc-900/50 p-8 shadow-2xl backdrop-blur-md">

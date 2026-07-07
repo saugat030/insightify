@@ -1,5 +1,5 @@
 import Sidebar from "../../_components/private/sidebar";
-import Header from "../../_components/Header";
+import Header from "../../_components/header";
 import RoleGuard from "@/app/_components/private/rolegaurd";
 
 export default function PrivateLayout({

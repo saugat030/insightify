@@ -1,5 +1,5 @@
 import { Metadata } from "next";
-import UnderConstruction from "@/app/_components/UnderConstruction";
+import UnderConstruction from "@/app/_components/under-construction";
 
 export const metadata: Metadata = {
   title: "Settings | Under Construction",

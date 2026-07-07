@@ -1,21 +1,16 @@
 // app/page.tsx
-import { Navbar } from "@/app/_components/Navbar";
-import { NeuralHero } from "@/app/_components/NeuralHero";
-import { FeaturePrism } from "@/app/_components/FeaturePrism";
-import { LiveTicker } from "@/app/_components/LiveTicker";
+import { NeuralHero } from "@/app/_components/neural-hero";
+import { FeaturePrism } from "@/app/_components/feature-prism";
+import { LiveTicker } from "@/app/_components/live-ticker";
 import Link from "next/link";
 
 export default function HomePage() {
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-background text-foreground selection:bg-white/20 font-outfit">
-      {/* Background Texture */}
-      <div className="noise" />
-      <div className="bg-grid fixed inset-0 z-0 opacity-20" />
+    <>
 
-      {/* Ticker & Header */}
+      {/* Ticker */}
       <div className="fixed top-0 z-50 w-full">
         <LiveTicker />
-        <Navbar />
       </div>
 
       <main className="relative z-10 pt-[100px]">
@@ -48,26 +43,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* FOOTER */}
-        <footer className="border-t border-white/5 bg-black py-12">
-          <div className="container mx-auto px-6 flex flex-col items-center justify-between gap-6 md:flex-row">
-            <p className="text-sm text-zinc-500">
-              © {new Date().getFullYear()} Insightify Inc. All rights reserved.
-            </p>
-            <div className="flex gap-6 text-sm text-zinc-500">
-              <a href="#" className="hover:text-white transition-colors">
-                Twitter
-              </a>
-              <a href="#" className="hover:text-white transition-colors">
-                GitHub
-              </a>
-              <a href="#" className="hover:text-white transition-colors">
-                Discord
-              </a>
-            </div>
-          </div>
-        </footer>
       </main>
-    </div>
+    </>
   );
 }

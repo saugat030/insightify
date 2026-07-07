@@ -1,4 +1,3 @@
-// app/_components/LiveTicker.tsx
 "use client";
 
 import { useEffect, useState } from "react";

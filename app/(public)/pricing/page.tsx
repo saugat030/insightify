@@ -1,15 +1,10 @@
 // app/pricing/page.tsx
 "use client";
-
-import { Navbar } from "@/app/_components/Navbar";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 
 export default function PricingPage() {
   return (
-    <div className="relative min-h-screen w-full bg-background text-foreground selection:bg-white/20 font-outfit">
-      <div className="noise" />
-      <div className="bg-grid fixed inset-0 z-0 opacity-20" />
-      <Navbar />
+    <>
 
       <main className="relative z-10 pt-32 pb-24">
         <section className="container mx-auto px-6 text-center mb-16">
@@ -85,7 +80,7 @@ export default function PricingPage() {
           </div>
         </section>
       </main>
-    </div>
+    </>
   );
 }
 

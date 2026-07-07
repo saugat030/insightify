@@ -1,4 +1,3 @@
-// app/_components/NeuralHero.tsx
 "use client";
 
 import { useEffect, useState } from "react";
