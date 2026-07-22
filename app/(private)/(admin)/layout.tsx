@@ -1,6 +1,7 @@
 import Sidebar from "../../_components/private/sidebar";
 import Header from "../../_components/header";
 import RoleGuard from "@/app/_components/private/rolegaurd";
+import { Toaster } from "@/components/ui/sonner";
 
 export default function PrivateLayout({
   children,
@@ -18,6 +19,7 @@ export default function PrivateLayout({
           </main>
         </div>
       </div>
+      <Toaster richColors position="top-right" />
     </RoleGuard>
   );
 }

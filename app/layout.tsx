@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Oswald, Outfit } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/hooks/useAuth";
+import { GoogleOAuthProvider } from "@react-oauth/google";
 
 const oswald = Oswald({
   subsets: ["latin"],
@@ -21,12 +22,23 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Only wrap with the Google provider when a client ID is configured.
+  // Initializing it with an empty client_id crashes the GSI client, so when the
+  // env var is missing we skip the provider (Google buttons are hidden too).
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
   return (
     <html lang="en">
       <body
         className={`${oswald.variable} ${outfit.variable} antialiased`}
       >
-        <AuthProvider>{children}</AuthProvider>
+        {clientId ? (
+          <GoogleOAuthProvider clientId={clientId}>
+            <AuthProvider>{children}</AuthProvider>
+          </GoogleOAuthProvider>
+        ) : (
+          <AuthProvider>{children}</AuthProvider>
+        )}
       </body>
     </html>
   );

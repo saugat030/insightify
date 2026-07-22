@@ -5,6 +5,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AxiosError } from "axios";
+import {
+  GoogleAuthButton,
+  googleAuthEnabled,
+} from "@/app/_components/google-auth-button";
 
 // separate the logic into a standalone component
 function LoginForm() {
@@ -12,9 +16,24 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const { login, user, isLoading: isAuthLoading } = useAuth();
+  const { login, googleLogin, user, isLoading: isAuthLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const handleGoogleCode = async (code: string) => {
+    try {
+      const user = await googleLogin(code);
+      const from = searchParams.get("from");
+      if (user.role === "admin") {
+        router.push(from || "/admin/dashboard");
+      } else {
+        router.push(from || "/dashboard");
+      }
+    } catch (err) {
+      const error = err as AxiosError<{ message?: string }>;
+      setError(error.message || "Google authentication failed.");
+    }
+  };
 
   useEffect(() => {
     if (!isAuthLoading && user) {
@@ -142,6 +161,14 @@ function LoginForm() {
             </svg>
           </button>
         </form>
+
+        {googleAuthEnabled && (
+          <GoogleAuthButton
+            onCode={handleGoogleCode}
+            onError={() => setError("Google Login Failed.")}
+            disabled={isAuthLoading}
+          />
+        )}
 
         <div className="mt-8 text-center text-sm text-zinc-500">
           First time here?{" "}

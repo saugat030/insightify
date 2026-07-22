@@ -30,6 +30,7 @@ interface AuthContextType {
     email: string,
     password: string
   ) => Promise<void>;
+  googleLogin: (code: string) => Promise<User>;
   logout: () => Promise<void>;
 }
 
@@ -146,12 +147,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [updateAccessToken]);
 
+  const googleLogin = useCallback(
+    async (code: string) => {
+      try {
+        const res = await axiosInstance.post("/api/auth/google", { code });
+        const { user, accessToken } = res.data;
+        setUser(user);
+        updateAccessToken(accessToken);
+        return user;
+      } catch (error: any) {
+        console.error("Google Login failed:", error);
+        throw new Error(error.response?.data?.error || "Google Login failed");
+      }
+    },
+    [updateAccessToken]
+  );
+
   const value = {
     user,
     accessToken,
     isLoading,
     login,
     register,
+    googleLogin,
     logout,
   };
 

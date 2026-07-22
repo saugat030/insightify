@@ -118,6 +118,14 @@ export async function DELETE(
 
     const { id } = await params;
 
+    // Prevent an admin from deleting their own account.
+    if (auth.user && String(auth.user._id) === String(id)) {
+      return NextResponse.json(
+        { error: "You cannot delete your own account." },
+        { status: 400 },
+      );
+    }
+
     const deletedUser = await User.findByIdAndDelete(id);
 
     if (!deletedUser) {
@@ -137,6 +145,8 @@ export async function DELETE(
   }
 }
 
+// PATCH is used for quick, single-field inline edits from the users table
+// (tier and/or role) without opening the full edit dialog.
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -149,27 +159,68 @@ export async function PATCH(
 
     const { id } = await params;
     const body = await req.json();
-    const { tier } = body;
+    const { tier, role } = body;
+
     const validTiers = ["free", "pro"];
-    if (!tier || !validTiers.includes(tier)) {
+    const validRoles = ["admin", "user"];
+
+    // At least one updatable field must be provided.
+    if (tier === undefined && role === undefined) {
+      return NextResponse.json(
+        { error: "Nothing to update. Provide a 'tier' and/or 'role'." },
+        { status: 400 },
+      );
+    }
+
+    if (tier !== undefined && !validTiers.includes(tier)) {
       return NextResponse.json(
         { error: `Invalid tier. Must be one of: ${validTiers.join(", ")}` },
         { status: 400 },
       );
     }
+
+    if (role !== undefined && !validRoles.includes(role)) {
+      return NextResponse.json(
+        { error: `Invalid role. Must be one of: ${validRoles.join(", ")}` },
+        { status: 400 },
+      );
+    }
+
+    // Prevent an admin from demoting themselves (would lock them out of admin).
+    if (
+      role !== undefined &&
+      role !== "admin" &&
+      auth.user &&
+      String(auth.user._id) === String(id)
+    ) {
+      return NextResponse.json(
+        { error: "You cannot change your own role." },
+        { status: 400 },
+      );
+    }
+
     const user = await User.findById(id);
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
-    user.tier = tier;
+
+    if (tier !== undefined) user.tier = tier;
+    if (role !== undefined) user.role = role;
     await user.save();
 
+    const updatedUser = user.toObject();
+    delete updatedUser.password;
+
     return NextResponse.json(
-      { message: `User tier updated to ${tier}`, tier: user.tier },
+      {
+        success: true,
+        message: "User updated successfully",
+        data: updatedUser,
+      },
       { status: 200 },
     );
   } catch (error) {
-    console.error("Error updating user tier:", error);
+    console.error("Error updating user (PATCH):", error);
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 },

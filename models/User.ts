@@ -1,6 +1,6 @@
 import { Schema, models, model } from "mongoose";
 import bcrypt from "bcryptjs";
-//Object-Oriented way (logic encapsulated in the data model) method. This makes the model heavy but the controller small.
+
 const UserSchema = new Schema({
   username: {
     type: String,
@@ -35,10 +35,21 @@ const UserSchema = new Schema({
     lowercase: true,
     trim: true,
   },
+  // 1. CHANGED: Password is no longer strictly required for Google users
   password: {
     type: String,
-    required: [true, "Password is required."],
-    select: false, // prevent password from being returned by default in queries. there is a way to explicitly ask for it. Do chatgpt to know more.
+    required: function (this: any) {
+      // Password is only required if the user isn't using Google
+      return !this.googleId;
+    },
+    select: false, 
+  },
+  // 2. ADDED: To track their federated identity from Google
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true, // Crucial! Allows normal password users to have null/missing googleId without breaking the unique constraint
+    required: false,
   },
   createdAt: {
     type: Date,
@@ -46,45 +57,47 @@ const UserSchema = new Schema({
   },
 });
 
-// middleware to hash password before saving
-//pre('save') is a Mongoose Hook. It runs immediately before the document is written to MongoDB.
-//this refers to the current object i.e the current document.
-//esma if we try to use arrow function, the code breaks. Chatgpt for more details.
+// Middleware to hash password before saving
 UserSchema.pre("save", async function (next) {
-  // only hash the password if it has been modified (or is new)
-  // if a user updates their email or username, we dont want to re-hash their already hashed password (that would break their login).
+  // 3. CHANGED: Guard against Google sign-ups that don't pass a password
+  if (!this.password) {
+    return next();
+  }
+
+  // Only hash the password if it has been modified (or is new)
   if (!this.isModified("password")) {
     return next();
   }
 
-  // password hash
+  // Password hash
   const salt = await bcrypt.genSalt(12);
   this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
-// this attaches a .comparePassword method in the model itself so that we dont have to import bcrypt and do it there.
-//usage: const isMatch = await user.comparePassword(inputPassword);
-UserSchema.methods.comparePassword = async function (
-  candidatePassword: string,
-) {
-  // 'this.password' is accessible here because we explicitly selected it in the login route or any other route.
+// Attaches a .comparePassword method in the model itself
+UserSchema.methods.comparePassword = async function (candidatePassword: string) {
+  // Safety check in case a Google-only user tries to use password login
+  if (!this.password) {
+    return false;
+  }
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
+// Check tier usage limits
 UserSchema.methods.canCreateLink = function () {
   const now = new Date();
   const timeDiff = now.getTime() - this.lastResetDate.getTime();
 
   const DAY_MS = 24 * 60 * 60 * 1000;
   const WEEK_MS = 7 * DAY_MS;
-  // check if the reset window has passed
+  
   const resetWindow = this.tier === "pro" ? DAY_MS : WEEK_MS;
   if (timeDiff >= resetWindow) {
     this.linksCreatedCount = 0;
     this.lastResetDate = now;
   }
-  // validate against tier limits
+  
   const limits = { free: 2, pro: 15 };
   const maxAllowed = limits[this.tier as "free" | "pro"] || 0;
 

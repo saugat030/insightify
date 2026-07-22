@@ -4,6 +4,11 @@ import { useState, FormEvent, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { AxiosError } from "axios";
+import {
+  GoogleAuthButton,
+  googleAuthEnabled,
+} from "@/app/_components/google-auth-button";
 
 export default function RegisterPage() {
   const [username, setUsername] = useState("");
@@ -11,8 +16,18 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const { register, user, isLoading: isAuthLoading } = useAuth();
+  const { register, googleLogin, user, isLoading: isAuthLoading } = useAuth();
   const router = useRouter();
+
+  const handleGoogleCode = async (code: string) => {
+    try {
+      await googleLogin(code);
+      router.push("/dashboard");
+    } catch (err) {
+      const error = err as AxiosError<{ message?: string }>;
+      setError(error.message || "Google authentication failed.");
+    }
+  };
 
   useEffect(() => {
     if (!isAuthLoading && user) {
@@ -156,6 +171,14 @@ export default function RegisterPage() {
             </svg>
           </button>
         </form>
+
+        {googleAuthEnabled && (
+          <GoogleAuthButton
+            onCode={handleGoogleCode}
+            onError={() => setError("Google Login Failed.")}
+            disabled={isAuthLoading}
+          />
+        )}
 
         {/* Footer */}
         <div className="mt-8 text-center text-sm text-zinc-500">

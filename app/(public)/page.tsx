@@ -1,19 +1,12 @@
 // app/page.tsx
 import { NeuralHero } from "@/app/_components/neural-hero";
 import { FeaturePrism } from "@/app/_components/feature-prism";
-import { LiveTicker } from "@/app/_components/live-ticker";
 import Link from "next/link";
 
 export default function HomePage() {
   return (
     <>
-
-      {/* Ticker */}
-      <div className="fixed top-0 z-50 w-full">
-        <LiveTicker />
-      </div>
-
-      <main className="relative z-10 pt-[100px]">
+      <main className="relative z-10 pt-24">
         {/* HERO */}
         <NeuralHero />
 
