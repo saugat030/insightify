@@ -55,6 +55,35 @@ const UserSchema = new Schema({
     type: Date,
     default: Date.now,
   },
+
+  // ---- Encrypted Secrets Vault ----
+  // All fields below are opaque/public and safe to store in clear. The vault
+  // passphrase and derived key NEVER touch the server; these only let the
+  // browser re-derive and self-verify the key. See lib/vault/crypto.ts.
+  vaultEnabled: {
+    type: Boolean,
+    default: false,
+  },
+  // Per-user random salt (base64) fed into Argon2id in the browser.
+  vaultSalt: {
+    type: String,
+    required: false,
+    default: null,
+  },
+  // Argon2id cost parameters, stored so they can be raised later without
+  // breaking vaults created under older params.
+  vaultKdf: {
+    opsLimit: { type: Number, required: false },
+    memLimit: { type: Number, required: false },
+    alg: { type: Number, required: false },
+  },
+  // Sealed known-constant ("vault-ok"). The browser decrypts this on unlock to
+  // confirm a typed passphrase is correct — the server can neither verify nor
+  // learn the passphrase from it.
+  vaultVerifier: {
+    nonce: { type: String, required: false },
+    ciphertext: { type: String, required: false },
+  },
 });
 
 // Middleware to hash password before saving
