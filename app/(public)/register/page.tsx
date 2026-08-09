@@ -1,87 +1,114 @@
 "use client";
 
-import { useState, FormEvent, useEffect, Suspense } from "react";
+import { useState, FormEvent, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AxiosError } from "axios";
+import {
+  GoogleAuthButton,
+  googleAuthEnabled,
+} from "@/app/_components/google-auth-button";
 
-// separate the logic into a standalone component
-function LoginForm() {
+export default function RegisterPage() {
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const { login, user, isLoading: isAuthLoading } = useAuth();
+  const { register, googleLogin, user, isLoading: isAuthLoading } = useAuth();
   const router = useRouter();
-  const searchParams = useSearchParams();
+
+  const handleGoogleCode = async (code: string) => {
+    try {
+      await googleLogin(code);
+      router.push("/dashboard");
+    } catch (err) {
+      const error = err as AxiosError<{ message?: string }>;
+      setError(error.message || "Google authentication failed.");
+    }
+  };
 
   useEffect(() => {
     if (!isAuthLoading && user) {
-      const from = searchParams.get("from");
-      user.role === "admin"
-        ? router.push(from || "/admin/dashboard")
-        : router.push(from || "/dashboard");
+      router.push("/dashboard");
     }
-  }, [user, isAuthLoading, router, searchParams]);
+  }, [user, isAuthLoading, router]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (!email || !password) {
+    if (!username || !email || !password) {
       setError("Please fill in all fields.");
       return;
     }
 
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters long.");
+      return;
+    }
+
     try {
-      const user = await login(email, password);
-      const from = searchParams.get("from");
-      if (user.role === "admin") {
-        router.push(from || "/admin/dashboard");
-      } else {
-        router.push(from || "/dashboard");
-      }
-    } catch (err) {
-      const error = err as AxiosError<{ message?: string }>;
-      setError(error.message || "An unknown error occurred.");
+      await register(username, email, password);
+      router.push("/dashboard");
+    } catch (err: any) {
+      setError(err.message || "An unknown error occurred.");
     }
   };
 
-  // reusing your loading state logic
-  if (isAuthLoading || (!isAuthLoading && user)) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-black text-white">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-white border-t-transparent" />
-          <p className="font-mono text-xs text-zinc-500">AUTHENTICATING...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden bg-background text-foreground selection:bg-white/20 font-outfit">
-      <div className="noise" />
-      <div className="bg-grid absolute inset-0 opacity-40" />
+    <div className="relative flex min-h-screen w-full flex-col items-center justify-center">
 
+      {/* Main Card */}
       <div className="relative z-10 w-full max-w-sm rounded-xl border border-white/10 bg-zinc-900/50 p-8 shadow-2xl backdrop-blur-md">
+        {/* Header */}
         <div className="mb-8 text-center">
-          <Link href="/" className="mb-6 inline-block"></Link>
+          <Link href="/" className="mb-6 inline-block">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-black">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                className="h-6 w-6"
+              >
+                <path d="M11.25 4.533A9.707 9.707 0 006 3a9.735 9.735 0 00-3.25.555.75.75 0 00-.5.707v14.25a.75.75 0 001 .75c.799 0 1.571-.059 2.308-.17 1.348-.204 2.651-.621 3.868-1.22l.509-.254.55-.274a7.973 7.973 0 012.525 0l.55.274.509.254a14.394 14.394 0 003.868 1.22c.736.111 1.509.17 2.308.17a.75.75 0 001-.75V4.262a.75.75 0 00-.5-.707A9.735 9.735 0 0018 3a9.707 9.707 0 00-5.25 1.533v8.152l-.46.23c-1.222.608-2.673.608-3.895 0l-.46-.23V4.533zM12 14.73a6.45 6.45 0 00-1.954-.954l-1.636-.546a.75.75 0 00-.316 1.41l1.635.546c.55.183 1.13.315 1.725.392v-3.79c0-.414.336-.75.75-.75s.75.336.75.75v3.79c.594-.077 1.174-.21 1.725-.392l1.635-.546a.75.75 0 00-.316-1.41l-1.636.546c-.672.224-1.326.544-1.954.954z" />
+              </svg>
+            </div>
+          </Link>
           <h1 className="text-2xl font-semibold tracking-tight text-white font-oswald">
-            Welcome back
+            Create an account
           </h1>
           <p className="mt-2 text-sm text-zinc-500">
-            Enter your credentials to access your workspace.
+            Start organizing your knowledge today.
           </p>
         </div>
 
+        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="rounded border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-500">
               {error}
             </div>
           )}
+
+          <div className="space-y-2">
+            <label
+              htmlFor="username"
+              className="text-xs font-medium uppercase tracking-wider text-zinc-500"
+            >
+              Username
+            </label>
+            <input
+              type="text"
+              id="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-black/50 p-3 text-white placeholder-zinc-700 outline-none transition-all focus:border-white/30 focus:bg-black"
+              placeholder="username"
+              required
+            />
+          </div>
 
           <div className="space-y-2">
             <label
@@ -114,7 +141,7 @@ function LoginForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full rounded-lg border border-white/10 bg-black/50 p-3 text-white placeholder-zinc-700 outline-none transition-all focus:border-white/30 focus:bg-black"
-              placeholder="••••••••"
+              placeholder="•••••••• (min 8 chars)"
               required
             />
           </div>
@@ -127,7 +154,7 @@ function LoginForm() {
             {isAuthLoading ? (
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-black border-t-transparent" />
             ) : (
-              "Sign In"
+              "Sign Up"
             )}
             <svg
               className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1"
@@ -145,37 +172,25 @@ function LoginForm() {
           </button>
         </form>
 
+        {googleAuthEnabled && (
+          <GoogleAuthButton
+            onCode={handleGoogleCode}
+            onError={() => setError("Google Login Failed.")}
+            disabled={isAuthLoading}
+          />
+        )}
+
+        {/* Footer */}
         <div className="mt-8 text-center text-sm text-zinc-500">
-          First time here?{" "}
+          Already have an account?{" "}
           <Link
-            href="/register"
+            href="/login"
             className="font-medium text-white hover:underline"
           >
-            Create an account
+            Sign in
           </Link>
         </div>
       </div>
     </div>
-  );
-}
-
-// define a loading fallback for the suspense boundary
-function LoadingState() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-black text-white">
-      <div className="flex flex-col items-center gap-4">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-white border-t-transparent" />
-        <p className="font-mono text-xs text-zinc-500">LOADING...</p>
-      </div>
-    </div>
-  );
-}
-
-// export the page component wrapping the form in suspense
-export default function LoginPage() {
-  return (
-    <Suspense fallback={<LoadingState />}>
-      <LoginForm />
-    </Suspense>
   );
 }

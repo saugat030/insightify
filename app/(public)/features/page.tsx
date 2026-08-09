@@ -1,17 +1,10 @@
 "use client";
-
-import { Navbar } from "@/app/_components/Navbar";
-import { useState, useEffect } from "react";
-import ScannerComponent from "../_components/ScannerComponent";
+import ScannerComponent from "@/app/_components/scanner-component";
 
 export default function FeaturesPage() {
   return (
-    <div className="relative w-full bg-background text-foreground selection:bg-white/20 font-outfit">
-      <div className="noise" />
-      <div className="bg-grid fixed inset-0 z-0 opacity-20" />
-      <Navbar />
+    <>
       <main className="relative z-10 pt-32 pb-24">
-        {/* Header */}
         <section className="container mx-auto px-6 text-center mb-24">
           <h1 className="text-4xl font-bold tracking-tight text-white sm:text-6xl mb-6 font-oswald">
             Command Center for <br />
@@ -22,18 +15,16 @@ export default function FeaturesPage() {
           </p>
         </section>
 
-        {/* FEATURE 1: CAPTURE & SCAN (The Scanner Component) */}
         <section className="container mx-auto px-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-            {/* Text Content */}
             <div className="order-2 lg:order-1">
               <h2 className="text-3xl font-bold text-white mb-4 font-oswald">
                 Reads like a human.<br />
                 Processes like a machine.
               </h2>
               <p className="text-zinc-400 mb-8 leading-relaxed">
-                Our advanced scraper doesn't just grab HTML. It understands context. 
-                Using Gemini AI, it identifies key entities, summarizes core arguments, 
+                Our advanced scraper doesn't just grab HTML. It understands context.
+                Using Gemini AI, it identifies key entities, summarizes core arguments,
                 and tags content automatically.
               </p>
               <ul className="space-y-4">
@@ -52,11 +43,10 @@ export default function FeaturesPage() {
               </ul>
             </div>
 
-            {/* Visual: Scanner Mockup */}
             <ScannerComponent />
           </div>
         </section>
       </main>
-    </div>
+    </>
   );
 }

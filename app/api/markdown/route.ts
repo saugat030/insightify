@@ -37,12 +37,15 @@ export async function POST(req: NextRequest) {
     }
     await connectToDb();
     
-    const { title, content } = await req.json();
-    
+    const { title, content, encrypted, nonce } = await req.json();
+
     const newDoc = await MarkdownDoc.create({
       user: payload.userId,
       title: title || "markdown-1",
       content: content || "",
+      // For encrypted docs `content` is ciphertext and `nonce` its base64 nonce.
+      encrypted: !!encrypted,
+      nonce: encrypted ? nonce ?? null : null,
     });
 
     return NextResponse.json(newDoc, { status: 201 });
@@ -65,15 +68,28 @@ export async function PUT(req: NextRequest) {
     }
     await connectToDb();
     
-    const { id, title, content } = await req.json();
-    
+    const { id, title, content, encrypted, nonce } = await req.json();
+
     if (!id) {
        return NextResponse.json({ error: "ID is required" }, { status: 400 });
     }
 
+    // When a doc is encrypted, `content` is ciphertext and `nonce` is required;
+    // toggling back to plaintext clears the nonce. Only set encryption fields
+    // when the client provides `encrypted` so partial saves stay backward-safe.
+    const update: Record<string, unknown> = {
+      title,
+      content,
+      updatedAt: Date.now(),
+    };
+    if (encrypted !== undefined) {
+      update.encrypted = !!encrypted;
+      update.nonce = encrypted ? nonce ?? null : null;
+    }
+
     const updatedDoc = await MarkdownDoc.findOneAndUpdate(
       { _id: id, user: payload.userId },
-      { title, content, updatedAt: Date.now() },
+      update,
       { new: true }
     );
 

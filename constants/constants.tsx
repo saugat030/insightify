@@ -10,9 +10,9 @@ import {
   Settings,
 } from "lucide-react";
 import { NavItem, StatData, Transaction, RevenueData } from "@/types/types";
-import ScannerComponent from "@/app/_components/ScannerComponent";
-import PipeLineVisualization from "@/app/_components/PipeLineVisualization";
-import TranslateAndExportPreview from "@/app/_components/TranslateAndExportPreview";
+import ScannerComponent from "@/app/_components/scanner-component";
+import PipeLineVisualization from "@/app/_components/pipeline-visualization";
+import TranslateAndExportPreview from "@/app/_components/translate-and-export-preview";
 
 export const NAV_ITEMS: NavItem[] = [
   {

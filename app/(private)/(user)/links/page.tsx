@@ -1,5 +1,5 @@
-import { DashboardClient } from "@/app/_components/DashboardClient";
-import { NewLinkForm } from "@/app/_components/NewLinkForm";
+import { DashboardClient } from "@/app/_components/dashboard-client";
+import { NewLinkForm } from "@/app/_components/new-link-form";
 
 const LinkPage = () => {
   return (

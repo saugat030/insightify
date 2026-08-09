@@ -1,4 +1,3 @@
-// app/_components/Navbar.tsx
 "use client";
 
 import Link from "next/link";
@@ -36,14 +35,20 @@ export function Navbar() {
             >
               Features
             </Link>
-            <Link 
-              href="/workflow" 
+            <Link
+              href="/workflow"
               className={`transition-colors hover:text-white ${isActive('/workflow') ? 'text-white' : 'text-zinc-400'}`}
             >
               Workflow
             </Link>
-            <Link 
-              href="/pricing" 
+            <Link
+              href="/playground"
+              className={`transition-colors hover:text-white ${isActive('/playground') ? 'text-white' : 'text-zinc-400'}`}
+            >
+              Editor
+            </Link>
+            <Link
+              href="/pricing"
               className={`transition-colors hover:text-white ${isActive('/pricing') ? 'text-white' : 'text-zinc-400'}`}
             >
               Why Us
