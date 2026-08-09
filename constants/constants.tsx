@@ -11,8 +11,8 @@ import {
 } from "lucide-react";
 import { NavItem, StatData, Transaction, RevenueData } from "@/types/types";
 import ScannerComponent from "@/app/_components/scanner-component";
-import PipeLineVisualization from "@/app/_components/pipeline-visualization";
 import TranslateAndExportPreview from "@/app/_components/translate-and-export-preview";
+import AnalyticsPreview from "@/app/_components/analytics-preview";
 
 export const NAV_ITEMS: NavItem[] = [
   {
@@ -150,31 +150,38 @@ export const TRANSACTIONS: Transaction[] = [
   },
 ];
 
+// The homepage feature showcase. One entry per major product capability:
+//   1. AI extraction (the links/scanner flow)
+//   2. The Markdown editor + encrypted vault
+//   3. The analytics dashboard
+//
+// `chrome` controls whether FeaturePrism wraps the preview in the mac window
+// frame — the scanner ships its own browser chrome, so it opts out.
 export const FEATURES_DATA = {
-  scan: {
+  extract: {
     title: "AI & Extraction",
-    desc: "Instant analysis of any URL. We strip the noise and find the signal.",
-    color: "blue",
-    preview: (
-      <ScannerComponent variant="medium" className="h-full w-full" />
-    )
+    desc: "Paste any URL and we strip the noise to find the signal — title, summary and tags extracted automatically, then filed into your library as permanent, searchable knowledge.",
+    href: "/features#ai-extraction",
+    cta: "Explore AI & Extraction",
+    chrome: false,
+    preview: <ScannerComponent variant="medium" className="h-full w-full" />,
   },
-  flow: {
-    title: "Workflow",
-    desc: "A seamless pipeline from clipboard to permanent knowledge vault.",
-    color: "purple",
-    preview: (
-      <PipeLineVisualization />
-    )
-  },
-  notes: {
+  editor: {
     title: "Translate & Export",
-    desc: "Translate any Markdown notes instantly. Save them securely in your vault or extract them as a PDF for future reference.",
-    color: "emerald",
-    preview: (
-      <TranslateAndExportPreview />
-    )
-  }
+    desc: "A live Markdown editor with instant translation and one-click PDF export. Flip on the encrypted vault and your notes are sealed in your browser with a passphrase only you hold.",
+    href: "/features#editor",
+    cta: "Explore the editor & vault",
+    chrome: true,
+    preview: <TranslateAndExportPreview />,
+  },
+  analytics: {
+    title: "Analytics Dashboard",
+    desc: "See how your library grows over time — extraction activity, saved links and usage trends, broken down in one detailed dashboard.",
+    href: "/features#analytics",
+    cta: "Explore the dashboard",
+    chrome: true,
+    preview: <AnalyticsPreview />,
+  },
 };
 
 export const DEFAULT_MARKDOWN = `# Welcome to the Live Editor

@@ -1,52 +1,217 @@
 "use client";
+
+import Link from "next/link";
+import { Check, ShieldCheck } from "lucide-react";
 import ScannerComponent from "@/app/_components/scanner-component";
+import TranslateAndExportPreview from "@/app/_components/translate-and-export-preview";
+import AnalyticsPreview from "@/app/_components/analytics-preview";
+
+// Detailed breakdown of the three product capabilities. Each section carries an
+// id so the homepage feature cards can deep-link here (/features#ai-extraction,
+// #editor, #analytics). scroll-mt keeps the heading clear of the fixed navbar.
+//
+// Note: the pipeline/workflow visualisation deliberately lives only on
+// /workflow — this page describes *what* each feature does, not how it flows.
+
+const ACCENTS = {
+  blue: { text: "text-blue-400", bullet: "text-blue-500" },
+  emerald: { text: "text-emerald-400", bullet: "text-emerald-500" },
+  purple: { text: "text-purple-400", bullet: "text-purple-500" },
+} as const;
+
+type Accent = keyof typeof ACCENTS;
+
+// Wraps a preview in the same mac-window frame used on the homepage.
+function PreviewFrame({
+  children,
+  chrome = true,
+}: {
+  children: React.ReactNode;
+  chrome?: boolean;
+}) {
+  return (
+    <div className="relative h-[460px] w-full overflow-hidden rounded-3xl border border-white/10 bg-black/50 shadow-2xl backdrop-blur-xl">
+      {chrome && (
+        <div className="absolute left-0 right-0 top-0 z-10 flex h-10 items-center gap-2 border-b border-white/10 bg-black/20 px-4">
+          <div className="h-3 w-3 rounded-full bg-red-500/20" />
+          <div className="h-3 w-3 rounded-full bg-yellow-500/20" />
+          <div className="h-3 w-3 rounded-full bg-green-500/20" />
+        </div>
+      )}
+      <div className={`${chrome ? "pt-10" : ""} h-full w-full`}>{children}</div>
+    </div>
+  );
+}
+
+function FeatureSection({
+  id,
+  eyebrow,
+  accent,
+  heading,
+  body,
+  points,
+  preview,
+  flip = false,
+}: {
+  id: string;
+  eyebrow: string;
+  accent: Accent;
+  heading: React.ReactNode;
+  body: string;
+  points: string[];
+  preview: React.ReactNode;
+  flip?: boolean;
+}) {
+  const a = ACCENTS[accent];
+  return (
+    <section id={id} className="container mx-auto scroll-mt-32 px-6 py-20">
+      <div className="grid grid-cols-1 items-center gap-16 lg:grid-cols-2">
+        {/* copy */}
+        <div className={flip ? "order-2" : "order-2 lg:order-1"}>
+          <span
+            className={`mb-3 block text-xs font-semibold uppercase tracking-widest ${a.text}`}
+          >
+            {eyebrow}
+          </span>
+
+          <h2 className="mb-4 font-oswald text-3xl font-bold text-white">
+            {heading}
+          </h2>
+          <p className="mb-8 leading-relaxed text-zinc-400">{body}</p>
+
+          <ul className="space-y-4">
+            {points.map((item) => (
+              <li key={item} className="flex items-start text-zinc-300">
+                <Check className={`mr-3 mt-0.5 h-5 w-5 shrink-0 ${a.bullet}`} />
+                <span className="text-[15px] leading-relaxed">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* preview */}
+        <div className={flip ? "order-1" : "order-1 lg:order-2"}>{preview}</div>
+      </div>
+    </section>
+  );
+}
 
 export default function FeaturesPage() {
   return (
-    <>
-      <main className="relative z-10 pt-32 pb-24">
-        <section className="container mx-auto px-6 text-center mb-24">
-          <h1 className="text-4xl font-bold tracking-tight text-white sm:text-6xl mb-6 font-oswald">
-            Command Center for <br />
-            <span className="text-gradient">Digital Knowledge.</span>
-          </h1>
-          <p className="max-w-2xl mx-auto text-lg text-zinc-400">
-            A suite of precision tools designed to capture, analyze, and retrieve information instantly.
+    <main className="relative z-10 pb-24 pt-32">
+      {/* hero */}
+      <section className="container mx-auto mb-8 px-6 text-center">
+        <h1 className="mb-6 font-oswald text-4xl font-bold tracking-tight text-white sm:text-6xl">
+          Command Center for <br />
+          <span className="text-gradient">Digital Knowledge.</span>
+        </h1>
+        <p className="mx-auto max-w-2xl text-lg text-zinc-400">
+          Three tools that work together: capture the web with AI, write and
+          encrypt what matters, and watch your library grow.
+        </p>
+      </section>
+
+      {/* 1 — AI & Extraction */}
+      <FeatureSection
+        id="ai-extraction"
+        eyebrow="AI & Extraction"
+        accent="blue"
+        heading={
+          <>
+            Reads like a human.
+            <br />
+            Processes like a machine.
+          </>
+        }
+        body="Paste any URL. We fetch the page, strip everything that isn't the article, and hand the clean text to Gemini — which returns a bulleted summary, smart tags and extra context, all filed into your library automatically."
+        points={[
+          "Noise removal before analysis — scripts, navigation, headers, footers and iframes are stripped out",
+          "Summaries generated by Gemini and returned as scannable bullet points",
+          "Automatic tagging so anything you save stays findable",
+          "Optional category and keyword hints to steer the analysis toward what you care about",
+          "Page title and cover image captured alongside the summary",
+        ]}
+        preview={
+          <PreviewFrame chrome={false}>
+            <ScannerComponent variant="medium" className="h-full w-full" />
+          </PreviewFrame>
+        }
+      />
+
+      {/* 2 — Editor & Vault */}
+      <FeatureSection
+        id="editor"
+        eyebrow="Translate & Export"
+        accent="emerald"
+        flip
+        heading={
+          <>
+            Write freely.
+            <br />
+            Encrypt what matters.
+          </>
+        }
+        body="A live Markdown editor with side-by-side preview, multiple document tabs and auto-save. Turn on the vault for any document and it's encrypted inside your browser before it's ever sent — we only ever store ciphertext."
+        points={[
+          "Live side-by-side preview with GitHub-flavored Markdown",
+          "Multiple documents in tabs, each auto-saved as you type",
+          "One-click export to PDF, generated entirely in your browser",
+          "Per-document encryption toggle — mix plain notes and secrets freely",
+          "Argon2id derives your key; XSalsa20-Poly1305 seals the content and detects tampering",
+          "Your passphrase never reaches our servers — we cannot read your notes, and we cannot reset it",
+        ]}
+        preview={
+          <PreviewFrame>
+            <TranslateAndExportPreview />
+          </PreviewFrame>
+        }
+      />
+
+      {/* 3 — Analytics */}
+      <FeatureSection
+        id="analytics"
+        eyebrow="Analytics Dashboard"
+        accent="purple"
+        heading={
+          <>
+            Know what your
+            <br />
+            library is doing.
+          </>
+        }
+        body="Every link you extract and every document you write feeds a single dashboard, so you can see what you're collecting, which topics dominate, and how much of your plan you've used."
+        points={[
+          "Extraction activity charted over time",
+          "Your most frequent tags and categories at a glance",
+          "Totals for saved links and editor documents",
+          "Usage measured against your plan limits",
+        ]}
+        preview={
+          <PreviewFrame>
+            <AnalyticsPreview />
+          </PreviewFrame>
+        }
+      />
+
+      {/* CTA → workflow */}
+      <section className="container mx-auto px-6 pt-12 text-center">
+        <div className="mx-auto max-w-3xl rounded-3xl border border-white/10 bg-zinc-900/50 px-6 py-16 backdrop-blur-xl">
+          <ShieldCheck className="mx-auto mb-5 h-8 w-8 text-zinc-500" />
+          <h2 className="mb-4 font-oswald text-3xl font-bold text-white">
+            See how it all connects.
+          </h2>
+          <p className="mx-auto mb-8 max-w-md text-zinc-400">
+            Follow a URL and a note end to end, from capture to encrypted
+            storage.
           </p>
-        </section>
-
-        <section className="container mx-auto px-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-            <div className="order-2 lg:order-1">
-              <h2 className="text-3xl font-bold text-white mb-4 font-oswald">
-                Reads like a human.<br />
-                Processes like a machine.
-              </h2>
-              <p className="text-zinc-400 mb-8 leading-relaxed">
-                Our advanced scraper doesn't just grab HTML. It understands context.
-                Using Gemini AI, it identifies key entities, summarizes core arguments,
-                and tags content automatically.
-              </p>
-              <ul className="space-y-4">
-                {[
-                  "Semantic understanding of content",
-                  "Automatic noise removal (ads, navs)",
-                  "Entity recognition for smart tagging"
-                ].map((item, i) => (
-                  <li key={i} className="flex items-center text-zinc-300">
-                    <svg className="h-5 w-5 text-blue-500 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <ScannerComponent />
-          </div>
-        </section>
-      </main>
-    </>
+          <Link
+            href="/workflow"
+            className="inline-flex h-12 items-center justify-center rounded-full bg-white px-8 font-semibold text-black transition-all hover:scale-105 hover:bg-zinc-200"
+          >
+            View the workflow
+          </Link>
+        </div>
+      </section>
+    </main>
   );
 }

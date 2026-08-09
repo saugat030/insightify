@@ -16,158 +16,276 @@ import {
   Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Link, FileCode2, BrainCircuit, Database, Webhook } from "lucide-react";
+import {
+  Link,
+  FileCode2,
+  BrainCircuit,
+  Database,
+  PenLine,
+  Save,
+  ShieldCheck,
+  FileDown,
+  BarChart3,
+} from "lucide-react";
+
+// Two pipelines and where they converge:
+//   • blue    — AI extraction: URL → scrape/clean → Gemini → library
+//   • emerald — editor & vault: write → auto-save → encrypt in browser → stored
+//   • purple  — both feed the analytics dashboard
+//
+// The copy here mirrors what the code actually does (lib/scraper.ts strips
+// script/nav/header/footer/iframe, lib/gemini.ts calls gemini-2.5-flash-lite and
+// parses JSON, lib/vault/crypto.ts derives with Argon2id and seals with
+// XSalsa20-Poly1305) — keep them in sync if the implementation changes.
+
+type Accent = "blue" | "emerald" | "purple";
+
+const ACCENTS: Record<Accent, { icon: string; handle: string; hover: string }> = {
+  blue: {
+    icon: "text-blue-400",
+    handle: "!bg-blue-500",
+    hover: "hover:border-blue-500/40",
+  },
+  emerald: {
+    icon: "text-emerald-400",
+    handle: "!bg-emerald-500",
+    hover: "hover:border-emerald-500/40",
+  },
+  purple: {
+    icon: "text-purple-400",
+    handle: "!bg-purple-500",
+    hover: "hover:border-purple-500/40",
+  },
+};
+
+const EDGE_COLORS: Record<Accent, string> = {
+  blue: "#3b82f6",
+  emerald: "#10b981",
+  purple: "#a855f7",
+};
 
 interface WorkflowNodeData {
   title: string;
   description: string;
   icon: ReactNode;
+  accent: Accent;
+  step?: string;
 }
 
-// This ensures the nodes look like high-end SaaS cards instead of boring default boxes.
+// Cards styled to match the rest of the site rather than default flow boxes.
 const WorkflowNode = ({ data }: { data: WorkflowNodeData }) => {
+  const a = ACCENTS[data.accent];
   return (
-    <div className="relative p-4 rounded-2xl bg-zinc-900 border border-white/10 shadow-2xl w-[280px] hover:border-white/30 transition-colors group">
-      {/* Target Handle (Input) - Moved to Left */}
-      <Handle 
-        type="target" 
-        position={Position.Left} 
-        className="w-3 h-3 !bg-blue-500 !border-2 !border-zinc-900 opacity-0 group-hover:opacity-100 transition-opacity -ml-1" 
+    <div
+      className={`group relative w-[280px] rounded-2xl border border-white/10 bg-zinc-900 p-4 shadow-2xl transition-colors ${a.hover}`}
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        className={`-ml-1 h-3 w-3 !border-2 !border-zinc-900 opacity-0 transition-opacity group-hover:opacity-100 ${a.handle}`}
       />
-      
-      <div className="flex items-center gap-4 mb-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/5 bg-black text-blue-500">
+
+      <div className="mb-3 flex items-center gap-4">
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/5 bg-black ${a.icon}`}
+        >
           {data.icon}
         </div>
-        <h3 className="text-md font-bold text-white font-oswald tracking-wide">
-          {data.title}
-        </h3>
+        <div className="min-w-0">
+          {data.step && (
+            <span className="block text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+              {data.step}
+            </span>
+          )}
+          <h3 className="font-oswald text-md font-bold tracking-wide text-white">
+            {data.title}
+          </h3>
+        </div>
       </div>
-      
-      <p className="text-sm text-zinc-400 leading-relaxed">
-        {data.description}
-      </p>
 
-      {/* Source Handle (Output) - Moved to Right */}
-      <Handle 
-        type="source" 
-        position={Position.Right} 
-        className="w-3 h-3 !bg-blue-500 !border-2 !border-zinc-900 opacity-0 group-hover:opacity-100 transition-opacity -mr-1" 
+      <p className="text-sm leading-relaxed text-zinc-400">{data.description}</p>
+
+      <Handle
+        type="source"
+        position={Position.Right}
+        className={`-mr-1 h-3 w-3 !border-2 !border-zinc-900 opacity-0 transition-opacity group-hover:opacity-100 ${a.handle}`}
       />
     </div>
   );
 };
 
-// Register the custom node type
 const nodeTypes = {
   saasNode: WorkflowNode,
 };
 
-// --- 2. INITIAL DATA ---
+const LANE_A = 0; // AI extraction
+const LANE_B = 280; // editor & vault
+const COL = 350;
+
 const initialNodes: Node[] = [
+  // --- Lane A: AI & Extraction -------------------------------------------
   {
-    id: "1",
+    id: "a1",
     type: "saasNode",
-    position: { x: 50, y: 200 },
+    position: { x: 0, y: LANE_A },
     data: {
-      title: "Input Source",
-      description: "User pastes a target URL into the system.",
+      step: "Step 1",
+      title: "Paste a URL",
+      description:
+        "Drop in any article link, optionally with a category and keyword to steer the analysis.",
       icon: <Link size={18} />,
+      accent: "blue",
     },
   },
   {
-    id: "2",
+    id: "a2",
     type: "saasNode",
-    position: { x: 400, y: 200 },
+    position: { x: COL, y: LANE_A },
     data: {
-      title: "Intelligent Scraper",
-      description: "Fetches raw HTML, stripping ads and noise.",
+      step: "Step 2",
+      title: "Scrape & Clean",
+      description:
+        "We fetch the page and strip scripts, navigation, headers, footers and iframes — leaving only the article.",
       icon: <FileCode2 size={18} />,
+      accent: "blue",
     },
   },
   {
-    id: "3",
+    id: "a3",
     type: "saasNode",
-    position: { x: 750, y: 200 },
+    position: { x: COL * 2, y: LANE_A },
     data: {
-      title: "Gemini AI Core",
-      description: "Analyzes text, generates tags, and creates embeddings.",
+      step: "Step 3",
+      title: "Gemini Analysis",
+      description:
+        "The clean text goes to Gemini, which returns a bulleted summary, tags and extra context.",
       icon: <BrainCircuit size={18} />,
+      accent: "blue",
     },
   },
   {
-    id: "4a",
+    id: "a4",
     type: "saasNode",
-    position: { x: 1100, y: 100 }, // Branches up
+    position: { x: COL * 3, y: LANE_A },
     data: {
-      title: "Vector Database",
-      description: "Indexes the insights for instant semantic retrieval.",
+      step: "Step 4",
+      title: "Saved to Library",
+      description:
+        "Title, cover image, summary and tags are filed into your links library, ready to search.",
       icon: <Database size={18} />,
+      accent: "blue",
     },
   },
+
+  // --- Lane B: Editor & Encrypted Vault ----------------------------------
   {
-    id: "4b",
+    id: "b1",
     type: "saasNode",
-    position: { x: 1100, y: 300 }, // Branches down
+    position: { x: 0, y: LANE_B },
     data: {
-      title: "Webhook Trigger",
-      description: "Fires parsed JSON data directly to your application.",
-      icon: <Webhook size={18} />,
+      step: "Step 1",
+      title: "Write in Markdown",
+      description:
+        "Draft notes in the live editor with side-by-side preview and multiple document tabs.",
+      icon: <PenLine size={18} />,
+      accent: "emerald",
+    },
+  },
+  {
+    id: "b2",
+    type: "saasNode",
+    position: { x: COL, y: LANE_B },
+    data: {
+      step: "Step 2",
+      title: "Auto-save",
+      description:
+        "Edits are debounced and persisted as you type — there is no save button to forget.",
+      icon: <Save size={18} />,
+      accent: "emerald",
+    },
+  },
+  {
+    id: "b3",
+    type: "saasNode",
+    position: { x: COL * 2, y: LANE_B },
+    data: {
+      step: "Optional",
+      title: "Encrypt in Browser",
+      description:
+        "Turn on the vault: Argon2id derives a key from your passphrase and seals the note with XSalsa20-Poly1305.",
+      icon: <ShieldCheck size={18} />,
+      accent: "emerald",
+    },
+  },
+  {
+    id: "b4",
+    type: "saasNode",
+    position: { x: COL * 3, y: LANE_B },
+    data: {
+      step: "Step 3",
+      title: "Stored & Exportable",
+      description:
+        "Only ciphertext reaches our servers. Export any document to PDF straight from the browser.",
+      icon: <FileDown size={18} />,
+      accent: "emerald",
+    },
+  },
+
+  // --- Convergence: Analytics --------------------------------------------
+  {
+    id: "c1",
+    type: "saasNode",
+    position: { x: COL * 4, y: (LANE_A + LANE_B) / 2 },
+    data: {
+      step: "Insights",
+      title: "Analytics Dashboard",
+      description:
+        "Activity from your library and your documents rolls up into trends, top tags and plan usage.",
+      icon: <BarChart3 size={18} />,
+      accent: "purple",
     },
   },
 ];
 
-// Setting animated to true creates a flowing data effect along the paths
-const initialEdges = [
-  {
-    id: "e1-2",
-    source: "1",
-    target: "2",
-    animated: true,
-    style: { stroke: "#3b82f6" },
-  },
-  {
-    id: "e2-3",
-    source: "2",
-    target: "3",
-    animated: true,
-    style: { stroke: "#3b82f6" },
-  },
-  {
-    id: "e3-4a",
-    source: "3",
-    target: "4a",
-    animated: true,
-    style: { stroke: "#3b82f6" },
-  },
-  {
-    id: "e3-4b",
-    source: "3",
-    target: "4b",
-    animated: true,
-    style: { stroke: "#3b82f6" },
-  },
+const flow = (id: string, source: string, target: string, accent: Accent): Edge => ({
+  id,
+  source,
+  target,
+  animated: true,
+  style: { stroke: EDGE_COLORS[accent] },
+});
+
+const initialEdges: Edge[] = [
+  flow("a1-a2", "a1", "a2", "blue"),
+  flow("a2-a3", "a2", "a3", "blue"),
+  flow("a3-a4", "a3", "a4", "blue"),
+
+  flow("b1-b2", "b1", "b2", "emerald"),
+  flow("b2-b3", "b2", "b3", "emerald"),
+  flow("b3-b4", "b3", "b4", "emerald"),
+
+  // both pipelines feed analytics
+  flow("a4-c1", "a4", "c1", "purple"),
+  flow("b4-c1", "b4", "c1", "purple"),
 ];
 
-// --- 3. MAIN COMPONENT ---
 export default function PipelineVisualization() {
   const [nodes, setNodes] = useState<Node[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
+
   // Allow nodes to be dragged, but prevent users from deleting nodes
   const onNodesChange = useCallback(
-    (changes: NodeChange[]) =>
-      setNodes((nds) => applyNodeChanges(changes, nds)),
+    (changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
     [],
   );
 
-  // Type 'changes' as an array of EdgeChange objects
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
     const safeChanges = changes.filter((c) => c.type !== "remove");
     setEdges((eds) => applyEdgeChanges(safeChanges, eds));
   }, []);
 
   return (
-    <div className="w-full h-[600px] border border-white/10  overflow-hidden bg-black/40 relative backdrop-blur-sm">
+    <div className="relative h-[640px] w-full overflow-hidden border border-white/10 bg-black/40 backdrop-blur-sm">
       {/* nodesConnectable={false} prevents users from drawing new lines.
         edgesFocusable={false} prevents users from clicking and interacting with the lines.
       */}
@@ -182,19 +300,13 @@ export default function PipelineVisualization() {
         edgesFocusable={false}
         fitView
         className="touch-none"
-        // Dark mode specific styling for the canvas
         colorMode="dark"
       >
         <Background gap={24} size={2} color="#27272a" />
         <Controls
-          className="bg-zinc-900 fill-white border-zinc-800"
+          className="border-zinc-800 bg-zinc-900 fill-white"
           showInteractive={false}
         />
-        {/*<MiniMap
-          nodeColor="#3b82f6"
-          maskColor="rgba(0, 0, 0, 0.7)"
-          className="bg-zinc-900 border-zinc-800 rounded-xl"
-        /> */}
       </ReactFlow>
     </div>
   );
