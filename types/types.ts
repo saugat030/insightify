@@ -7,28 +7,3 @@ export interface NavItem {
   path: string;
   allowedRoles: ("admin" | "user")[];
 }
-
-export interface StatData {
-  id: string;
-  label: string;
-  value: string;
-  change: number;
-  trend: "up" | "down" | "neutral";
-  icon: LucideIcon;
-  color: string;
-}
-
-export interface Transaction {
-  id: string;
-  user: string;
-  amount: string;
-  status: "Completed" | "Pending" | "Failed";
-  date: string;
-  avatar: string;
-}
-
-export interface RevenueData {
-  name: string;
-  revenue: number;
-  visitors: number;
-}

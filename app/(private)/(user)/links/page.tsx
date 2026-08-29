@@ -5,7 +5,7 @@ const LinkPage = () => {
   return (
     <div className="min-h-full flex flex-col">
       {/* Hero / Header Section */}
-      <div className="relative border-b border-white/10 bg-nexus-900/40 backdrop-blur-md z-10 px-8 py-10">
+      <div className="relative border-b border-white/10 backdrop-blur-md z-10 px-8 py-10">
           <div>
             <h1 className="text-4xl font-black text-white mb-2 tracking-tight">
               Knowledge Base <span className="text-cyan-400">.</span>

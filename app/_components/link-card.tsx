@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import axiosInstance from "@/lib/axiosInstance";
-import { useRouter } from "next/navigation";
+import { useLinksStore } from "@/store/useLinksStore";
 
 type Link = {
   _id: string;
@@ -22,7 +22,7 @@ interface LinkCardProps {
 }
 
 export function LinkCard({ link }: LinkCardProps) {
-  const router = useRouter();
+  const removeLink = useLinksStore((s) => s.removeLink);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,9 +35,14 @@ export function LinkCard({ link }: LinkCardProps) {
     setError(null);
     try {
       await axiosInstance.delete(`/api/links/${link._id}`);
-      router.refresh();
-    } catch (err: any) {
-      setError(err.response?.data?.error || "Failed to delete link.");
+      // Drop it from the shared store so the card disappears right away.
+      // router.refresh() did nothing here for the same reason as in
+      // NewLinkForm: the list is client-side and fetches in an effect.
+      removeLink(link._id);
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { error?: string } } })
+        ?.response?.data?.error;
+      setError(message || "Failed to delete link.");
       setIsDeleting(false);
     }
   };

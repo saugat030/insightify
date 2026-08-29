@@ -1,4 +1,5 @@
-import { REVENUE_DATA } from "@/constants/constants";
+"use client";
+
 import React from "react";
 import {
   AreaChart,
@@ -9,86 +10,147 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { EmptyState } from "./dashboard-card";
 
-export const RevenueChart: React.FC = () => {
+// Charts are pure presentation — every value comes from props, which come from
+// the analytics endpoints. Nothing here generates or pads data.
+
+const COLORS = {
+  blue: "#3b82f6",
+  emerald: "#10b981",
+  purple: "#a855f7",
+  cyan: "#06b6d4",
+} as const;
+
+export type ChartColor = keyof typeof COLORS;
+
+export interface DailyPoint {
+  date: string; // YYYY-MM-DD
+  count: number;
+}
+
+// "2026-08-09" -> "Aug 9". Parsed as UTC to match how the API buckets days.
+function formatDay(iso: string) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export function ActivityChart({
+  data,
+  color = "blue",
+  emptyMessage = "No activity in this period yet.",
+}: {
+  data: DailyPoint[];
+  color?: ChartColor;
+  emptyMessage?: string;
+}) {
+  const total = data.reduce((sum, p) => sum + p.count, 0);
+  if (!data.length || total === 0) {
+    return <EmptyState message={emptyMessage} />;
+  }
+
+  const stroke = COLORS[color];
+  const gradientId = `activity-${color}`;
+
   return (
-    <div className="nexus-card p-6 rounded-2xl h-full flex flex-col">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-lg font-semibold text-white">Revenue Overview</h2>
-          <p className="text-xs text-slate-500">Monthly revenue analytics</p>
-        </div>
-        <select className="bg-nexus-800 border border-white/10 text-slate-300 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-cyan-500/50">
-          <option>Last 6 Months</option>
-          <option>Last Year</option>
-        </select>
-      </div>
-
-      <div className="flex-1 w-full min-h-[300px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart
-            data={REVENUE_DATA}
-            margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-          >
-            <defs>
-              <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
-              </linearGradient>
-              <linearGradient id="colorVisitors" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="rgba(255,255,255,0.05)"
-              vertical={false}
-            />
-            <XAxis
-              dataKey="name"
-              stroke="#64748b"
-              fontSize={12}
-              tickLine={false}
-              axisLine={false}
-              dy={10}
-            />
-            <YAxis
-              stroke="#64748b"
-              fontSize={12}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(value) => `$${value}`}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "rgba(18, 18, 23, 0.9)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: "12px",
-                backdropFilter: "blur(10px)",
-              }}
-              itemStyle={{ color: "#fff" }}
-              labelStyle={{ color: "#94a3b8" }}
-            />
-            <Area
-              type="monotone"
-              dataKey="revenue"
-              stroke="#06b6d4"
-              strokeWidth={3}
-              fillOpacity={1}
-              fill="url(#colorRevenue)"
-            />
-            <Area
-              type="monotone"
-              dataKey="visitors"
-              stroke="#8b5cf6"
-              strokeWidth={3}
-              fillOpacity={1}
-              fill="url(#colorVisitors)"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+    <div className="h-full min-h-[260px] w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 10, right: 8, left: -20, bottom: 0 }}>
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={stroke} stopOpacity={0.35} />
+              <stop offset="95%" stopColor={stroke} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="rgba(255,255,255,0.05)"
+            vertical={false}
+          />
+          <XAxis
+            dataKey="date"
+            stroke="#71717a"
+            fontSize={11}
+            tickLine={false}
+            axisLine={false}
+            dy={8}
+            minTickGap={24}
+            tickFormatter={formatDay}
+          />
+          <YAxis
+            stroke="#71717a"
+            fontSize={11}
+            tickLine={false}
+            axisLine={false}
+            allowDecimals={false}
+          />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: "rgba(9, 9, 11, 0.95)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "12px",
+            }}
+            itemStyle={{ color: "#fff" }}
+            labelStyle={{ color: "#a1a1aa" }}
+            labelFormatter={(label) => formatDay(String(label))}
+          />
+          <Area
+            type="monotone"
+            dataKey="count"
+            name="Count"
+            stroke={stroke}
+            strokeWidth={2}
+            fillOpacity={1}
+            fill={`url(#${gradientId})`}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   );
-};
+}
+
+// Simple proportional bars — used for category/tag breakdowns where a full
+// charting library would be overkill.
+export function BreakdownBars({
+  items,
+  color = "blue",
+  emptyMessage = "Nothing to show yet.",
+}: {
+  items: { label: string; count: number }[];
+  color?: ChartColor;
+  emptyMessage?: string;
+}) {
+  if (!items.length) return <EmptyState message={emptyMessage} />;
+
+  const max = Math.max(...items.map((i) => i.count), 1);
+  const bar = COLORS[color];
+
+  return (
+    <ul className="space-y-3">
+      {items.map((item) => (
+        <li key={item.label}>
+          <div className="mb-1.5 flex items-baseline justify-between gap-3">
+            <span className="truncate text-sm text-zinc-300">{item.label}</span>
+            <span className="shrink-0 font-mono text-xs text-zinc-500">
+              {item.count}
+            </span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+            <div
+              className="h-full rounded-full transition-all"
+              style={{
+                width: `${Math.max(4, (item.count / max) * 100)}%`,
+                backgroundColor: bar,
+              }}
+            />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}

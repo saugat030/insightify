@@ -1,7 +1,7 @@
 "use client";
 import { useState, FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import axiosInstance from "@/lib/axiosInstance";
+import { useLinksStore } from "@/store/useLinksStore";
 
 export function NewLinkForm() {
   const [url, setUrl] = useState("");
@@ -11,7 +11,7 @@ export function NewLinkForm() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const router = useRouter();
+  const addLink = useLinksStore((s) => s.addLink);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -30,14 +30,16 @@ export function NewLinkForm() {
       setKeyword("");
       setCategory("Technology");
 
-      // This is key:
-      // It tells Next.js to re-fetch the data for this page (in our
-      // case, the /dashboard) which will re-run the GET /api/links
-      // call in our *next* component.
-      router.refresh();
-    } catch (err: any) {
-      // Handle error
-      setError(err.response?.data?.error || "Failed to save link.");
+      // Push the new link straight into the shared store so the list updates
+      // immediately. router.refresh() used to be here, but it only re-renders
+      // Server Components — the list is a client component fetching in an
+      // effect, so nothing happened until a manual page reload.
+      addLink(response.data);
+    } catch (err: unknown) {
+      // Handle error — the API sends a specific reason for scrape failures.
+      const message = (err as { response?: { data?: { error?: string } } })
+        ?.response?.data?.error;
+      setError(message || "Failed to save link.");
     } finally {
       setIsLoading(false);
     }
@@ -65,7 +67,7 @@ export function NewLinkForm() {
             disabled={isLoading}
           >
             {["Technology", "Science", "Gaming", "Geography", "Education", "Entertainment", "Health", "Other"].map(cat => (
-               <option key={cat} value={cat} className="bg-nexus-900">{cat}</option>
+               <option key={cat} value={cat}>{cat}</option>
             ))}
           </select>
         </div>

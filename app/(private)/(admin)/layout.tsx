@@ -10,7 +10,7 @@ export default function PrivateLayout({
 }>) {
   return (
     <RoleGuard allowedRoles={["admin"]}>
-      <div className="flex h-screen w-full bg-nexus-900 overflow-hidden relative selection:bg-cyan-500/30">
+      <div className="flex h-screen w-full overflow-hidden relative selection:bg-cyan-500/30 font-outfit">
         <Sidebar />
         <div className="flex-1 flex flex-col relative z-10 min-w-0">
           <Header />

@@ -12,7 +12,11 @@ const Sidebar = () => {
   const { user, isLoading } = useAuth();
   const pathname = usePathname();
 
-  if (isLoading) return <div className="w-64 bg-gray-100 animate-pulse" />;
+  // dark skeleton — a light one flashes white against the dark theme
+  if (isLoading)
+    return (
+      <div className="w-64 shrink-0 animate-pulse border-r border-white/10 bg-zinc-900/50" />
+    );
   const visibleItems = NAV_ITEMS.filter(
     (item) => user && item.allowedRoles.includes(user.role),
   );
@@ -20,7 +24,7 @@ const Sidebar = () => {
   return (
     <aside
       className={`
-        relative h-screen bg-nexus-800/50 backdrop-blur-xl border-r border-white/5 
+        relative h-screen bg-zinc-900/50 backdrop-blur-xl border-r border-white/10
         transition-all duration-500 ease-[cubic-bezier(0.25,0.1,0.25,1)]
         flex flex-col z-50
         ${collapsed ? "w-20" : "w-64"}
@@ -49,7 +53,7 @@ const Sidebar = () => {
                 ${
                   isActive
                     ? "bg-linear-to-r from-cyan-500/10 to-blue-500/5 text-cyan-400 border border-cyan-500/20"
-                    : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
+                    : "text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent"
                 }
               `}
             >
@@ -97,7 +101,7 @@ const Sidebar = () => {
       <div className="p-4 border-t border-white/5">
         <button
           onClick={toggleCollapsed}
-          className="flex items-center justify-center w-full p-3 rounded-xl bg-nexus-700/50 hover:bg-nexus-700 text-slate-400 hover:text-white transition-all duration-200 border border-white/5 hover:border-white/10 group"
+          className="flex items-center justify-center w-full p-3 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition-all duration-200 border border-white/5 hover:border-white/10 group"
         >
           {collapsed ? (
             <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />

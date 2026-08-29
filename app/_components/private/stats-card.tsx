@@ -1,61 +1,55 @@
 import React from "react";
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { StatData } from "@/types/types";
+import { LucideIcon } from "lucide-react";
 
-interface StatCardProps {
-  data: StatData;
-}
+// A single headline number.
+//
+// Deliberately has no trend/percentage indicator: we don't store historical
+// snapshots, so any "+12.5% vs last month" would be invented. Show the figure
+// and, where useful, a factual `hint` derived from real data.
 
-const StatCard: React.FC<StatCardProps> = ({ data }) => {
-  const TrendIcon =
-    data.trend === "up"
-      ? TrendingUp
-      : data.trend === "down"
-      ? TrendingDown
-      : Minus;
-  const trendColor =
-    data.trend === "up"
-      ? "text-emerald-400"
-      : data.trend === "down"
-      ? "text-rose-400"
-      : "text-slate-400";
-  const trendBg =
-    data.trend === "up"
-      ? "bg-emerald-400/10"
-      : data.trend === "down"
-      ? "bg-rose-400/10"
-      : "bg-slate-400/10";
+const ACCENTS = {
+  blue: "text-blue-400",
+  emerald: "text-emerald-400",
+  purple: "text-purple-400",
+  cyan: "text-cyan-400",
+  amber: "text-amber-400",
+  zinc: "text-zinc-400",
+} as const;
 
+export type StatAccent = keyof typeof ACCENTS;
+
+export default function StatCard({
+  label,
+  value,
+  icon: Icon,
+  hint,
+  accent = "zinc",
+}: {
+  label: string;
+  value: string | number;
+  icon: LucideIcon;
+  hint?: string;
+  accent?: StatAccent;
+}) {
   return (
-    <div className="nexus-card p-6 rounded-2xl relative overflow-hidden group">
-      {/* Background Glow Effect */}
-      <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/5 rounded-full blur-3xl group-hover:bg-white/10 transition-all duration-500" />
-
-      <div className="flex justify-between items-start relative z-10">
+    <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-6 transition-colors hover:border-white/20">
+      <div className="flex items-start justify-between">
         <div
-          className={`p-3 rounded-xl bg-white/5 border border-white/5 ${data.color} group-hover:scale-110 transition-transform duration-300`}
+          className={`rounded-xl border border-white/5 bg-white/5 p-3 ${ACCENTS[accent]}`}
         >
-          <data.icon className="w-6 h-6" />
-        </div>
-
-        <div
-          className={`flex items-center space-x-1 px-2 py-1 rounded-lg text-xs font-medium ${trendBg} ${trendColor}`}
-        >
-          <TrendIcon className="w-3 h-3" />
-          <span>{Math.abs(data.change)}%</span>
+          <Icon className="h-5 w-5" />
         </div>
       </div>
 
-      <div className="mt-4 relative z-10">
-        <h3 className="text-slate-400 text-sm font-medium tracking-wide">
-          {data.label}
+      <div className="mt-4">
+        <h3 className="text-sm font-medium tracking-wide text-zinc-400">
+          {label}
         </h3>
-        <p className="text-2xl font-bold text-white mt-1 font-mono tracking-tight">
-          {data.value}
+        <p className="mt-1 font-mono text-2xl font-bold tracking-tight text-white">
+          {value}
         </p>
+        {hint && <p className="mt-1 text-xs text-zinc-500">{hint}</p>}
       </div>
     </div>
   );
-};
-
-export default StatCard;
+}

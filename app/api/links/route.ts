@@ -2,7 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import connectToDb from "@/lib/db";
 import Link from "@/models/Link";
 import { verifyAccessToken, AccessTokenPayload } from "@/lib/auth";
-import { scrapeUrl } from "@/lib/scraper";
+import { scrapeUrl, ScrapeError } from "@/lib/scraper";
 import { getAiAnalysis } from "@/lib/gemini";
 import User from "@/models/User";
 
@@ -68,18 +68,8 @@ export async function POST(req: NextRequest) {
         { status: 403 },
       );
     }
-    if (user.tier === "free" && user.linksCreatedCount >= 2) {
-      return NextResponse.json(
-        { error: "Free tier limit reached. Please upgrade for more links." },
-        { status: 403 },
-      );
-    }
-    if (user.tier === "pro" && user.linksCreatedCount >= 15) {
-      return NextResponse.json(
-        { error: "Pro tier limit reached. Please upgrade for more links." },
-        { status: 403 },
-      );
-    }
+    // (canCreateLink above is the single source of truth for the limits — the
+    // duplicate hardcoded tier checks that used to sit here were unreachable.)
     const { url, category, keyword } = await req.json();
     if (!url || typeof url !== "string") {
       return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
@@ -99,20 +89,31 @@ export async function POST(req: NextRequest) {
       keyword: keyword || "",
       aiExtraInfo: extraInfo || "",
     });
-    // increment linksCreatedCount
-    await User.findByIdAndUpdate(payload.userId, {
-      $inc: { linksCreatedCount: 1 },
-    });
+    // Persist the quota usage on the same document canCreateLink() inspected,
+    // so a rolled-over window (linksCreatedCount + lastResetDate) is saved too.
+    // A bare $inc here would never write lastResetDate and the limit would
+    // silently stop being enforced.
+    await user.recordLinkCreated();
 
     return NextResponse.json(newLink, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[LINKS_POST_ERROR]", error);
-    if (
-      error.message.includes("scrape") ||
-      error.message.includes("AI analysis")
-    ) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+
+    // Scraping failures are the user's problem to act on (bad link, blocked
+    // site, paywall), so pass the specific reason through instead of a generic
+    // message. 422 = we understood the request but couldn't process that page.
+    if (error instanceof ScrapeError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.code === "invalid_url" ? 400 : 422 },
+      );
     }
+
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("AI analysis")) {
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 },

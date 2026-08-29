@@ -23,10 +23,13 @@ const Header = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const initial = (user?.username || "U").charAt(0).toUpperCase();
+
   return (
-    <header className="h-20 px-8 flex items-center justify-between sticky top-0 z-40 bg-nexus-900/80 backdrop-blur-md border-b border-white/5">
-      {/* Right Actions */}
-      <div className="flex items-center space-x-4 ml-6">
+    // Sits on the page background, so it needs its own surface + border to read
+    // as chrome rather than blending into the content beneath it.
+    <header className="h-20 px-8 flex items-center justify-end sticky top-0 z-40 bg-zinc-900/50 backdrop-blur-md border-b border-white/10">
+      <div className="flex items-center space-x-4">
         {/* user dropdown container */}
         <div className="relative" ref={dropdownRef}>
           <button
@@ -36,36 +39,46 @@ const Header = () => {
             }`}
           >
             <div className="text-right hidden md:block">
-              <div className="text-sm font-medium text-slate-200 group-hover:text-cyan-400 transition-colors capitalize">
+              <div className="text-sm font-medium text-zinc-200 group-hover:text-cyan-400 transition-colors capitalize">
                 {user?.username || "User"}
               </div>
-              <div className="text-xs text-slate-500">{user?.role}</div>
-            </div>
-
-            <div className="relative p-0.5 rounded-full bg-linear-to-br from-cyan-400 to-purple-600">
-              <div className="rounded-full bg-nexus-900 p-0.5">
-                <img
-                  src="https://picsum.photos/100/100"
-                  alt="User"
-                  className="w-8 h-8 rounded-full object-cover"
-                />
+              <div className="text-xs capitalize text-zinc-500">
+                {user?.role}
               </div>
             </div>
+
+            <div className="relative rounded-full bg-linear-to-br from-cyan-400 to-purple-600 p-0.5">
+              {user?.profilePicture ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={user.profilePicture}
+                  alt={user.username || "User"}
+                  className="h-8 w-8 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-900 text-xs font-semibold text-zinc-200">
+                  {initial}
+                </div>
+              )}
+            </div>
+
             <ChevronDown
-              className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${
+              className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${
                 isOpen ? "rotate-180" : ""
               }`}
             />
           </button>
 
-          {/* dropdown menu */}
+          {/* dropdown menu — opaque so the page content can't bleed through */}
           {isOpen && (
-            <div className="absolute top-full right-0 mt-2 w-56 bg-nexus-900 rounded-xl border border-white/10 shadow-xl shadow-black/50 overflow-hidden transform transition-all animate-in fade-in slide-in-from-top-2 z-50">
-              {/* profile link */}
-              <button className="w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-white/5 hover:text-cyan-400 transition-colors">
-                <User className="w-4 h-4" />
-                <span>Profile</span>
-              </button>
+            <div className="absolute top-full right-0 mt-2 w-56 rounded-xl border border-white/10 bg-zinc-900 shadow-xl shadow-black/50 overflow-hidden transform transition-all animate-in fade-in slide-in-from-top-2 z-50">
+              <div className="p-2">
+                {/* profile link */}
+                <button className="w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-sm text-zinc-300 hover:bg-white/5 hover:text-cyan-400 transition-colors">
+                  <User className="w-4 h-4" />
+                  <span>Profile</span>
+                </button>
+              </div>
 
               <div className="h-px bg-white/10 mx-2" />
 

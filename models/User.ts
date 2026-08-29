@@ -38,7 +38,7 @@ const UserSchema = new Schema({
   // 1. CHANGED: Password is no longer strictly required for Google users
   password: {
     type: String,
-    required: function (this: any) {
+    required: function (this: { googleId?: string | null }) {
       // Password is only required if the user isn't using Google
       return !this.googleId;
     },
@@ -113,24 +113,42 @@ UserSchema.methods.comparePassword = async function (candidatePassword: string) 
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Check tier usage limits
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
+export const TIER_LINK_LIMITS = { free: 2, pro: 15 } as const;
+
+// Check tier usage limits.
+//
+// IMPORTANT: when the quota window has elapsed this rolls the counter over
+// **in memory only** — it does not save. Callers that go on to create a link
+// must call recordLinkCreated(), which persists the rollover together with the
+// increment. Updating the counter with a bare $inc instead would leave
+// lastResetDate frozen forever, so the window would appear to have elapsed on
+// every subsequent request and the limit would never actually be enforced.
 UserSchema.methods.canCreateLink = function () {
   const now = new Date();
-  const timeDiff = now.getTime() - this.lastResetDate.getTime();
+  const lastReset = this.lastResetDate
+    ? new Date(this.lastResetDate).getTime()
+    : 0;
+  const timeDiff = now.getTime() - lastReset;
 
-  const DAY_MS = 24 * 60 * 60 * 1000;
-  const WEEK_MS = 7 * DAY_MS;
-  
   const resetWindow = this.tier === "pro" ? DAY_MS : WEEK_MS;
   if (timeDiff >= resetWindow) {
     this.linksCreatedCount = 0;
     this.lastResetDate = now;
   }
-  
-  const limits = { free: 2, pro: 15 };
-  const maxAllowed = limits[this.tier as "free" | "pro"] || 0;
+
+  const maxAllowed =
+    TIER_LINK_LIMITS[this.tier as keyof typeof TIER_LINK_LIMITS] || 0;
 
   return this.linksCreatedCount < maxAllowed;
+};
+
+// Persist "one more link used". Saves the whole document, so any window
+// rollover staged by canCreateLink() lands in the same write.
+UserSchema.methods.recordLinkCreated = async function () {
+  this.linksCreatedCount = (this.linksCreatedCount || 0) + 1;
+  await this.save();
 };
 
 export default models.User || model("User", UserSchema);
