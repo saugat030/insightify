@@ -1,46 +1,39 @@
-"use client";
-
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import { DottedGlowBackground } from "@/components/ui/dotted-glow-background";
 
 export function NeuralHero() {
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      setMousePos({
-        x: (e.clientX / window.innerWidth - 0.5) * 20,
-        y: (e.clientY / window.innerHeight - 0.5) * 20,
-      });
-    };
-    window.addEventListener("mousemove", handleMouseMove);
-    return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, []);
-
   return (
     <section className="relative min-h-[90vh] flex flex-col items-center justify-center overflow-hidden">
-      
-      {/* Neural Network Background Visualization */}
-      <div className="absolute inset-0 z-0 pointer-events-none">
-         {/* Central Core Glow */}
-         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[500px] w-[500px] bg-blue-500/10 rounded-full blur-[100px] animate-pulse"></div>
+      {/* Ambient dotted glow.
+          The site is dark-only and <html> carries no `dark` class, so the
+          component's dark-mode detection falls back to the visitor's OS
+          preference — on a light-mode machine it would paint near-black dots on
+          our black background. Passing both the light and dark colours
+          explicitly keeps it correct either way. */}
+      <DottedGlowBackground
+        className="pointer-events-none"
+        gap={26}
+        radius={1.4}
+        opacity={0.55}
+        color="rgba(255,255,255,0.28)"
+        darkColor="rgba(255,255,255,0.28)"
+        glowColor="rgba(59,130,246,0.9)"
+        darkGlowColor="rgba(59,130,246,0.9)"
+        backgroundOpacity={0}
+        speedMin={0.25}
+        speedMax={1.1}
+      />
 
-         {/* Floating Nodes (Simulated) */}
-         <Node x={20} y={30} delay={0} mouse={mousePos} />
-         <Node x={80} y={20} delay={1} mouse={mousePos} />
-         <Node x={15} y={70} delay={2} mouse={mousePos} />
-         <Node x={85} y={65} delay={0.5} mouse={mousePos} />
-         <Node x={50} y={15} delay={1.5} mouse={mousePos} />
-         
-         {/* Connecting Lines (SVG) */}
-         <svg className="absolute inset-0 w-full h-full opacity-20">
-            <line x1="50%" y1="50%" x2="20%" y2="30%" stroke="white" strokeWidth="1" />
-            <line x1="50%" y1="50%" x2="80%" y2="20%" stroke="white" strokeWidth="1" />
-            <line x1="50%" y1="50%" x2="15%" y2="70%" stroke="white" strokeWidth="1" />
-            <line x1="50%" y1="50%" x2="85%" y2="65%" stroke="white" strokeWidth="1" />
-            <line x1="50%" y1="50%" x2="50%" y2="15%" stroke="white" strokeWidth="1" />
-         </svg>
-      </div>
+      {/* Fades the dot field out toward the edges so it reads as ambience
+          rather than a hard-edged grid. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse at center, transparent 0%, transparent 35%, rgba(5,5,5,0.85) 75%, #050505 100%)",
+        }}
+      />
 
       {/* Main Content */}
       <div className="relative z-10 text-center px-6 max-w-5xl mx-auto">
@@ -55,14 +48,14 @@ export function NeuralHero() {
         </p>
 
         <div className="animate-reveal delay-300 flex flex-col sm:flex-row items-center justify-center gap-4">
-           <Link 
+           <Link
               href="/register"
               className="group relative h-12 px-8 flex items-center justify-center rounded-full bg-white text-black font-semibold transition-transform hover:scale-105 active:scale-95"
            >
               Create Account
               <div className="absolute inset-0 -z-10 bg-blue-500/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
            </Link>
-           <Link 
+           <Link
               href="/features"
               className="h-12 px-8 flex items-center justify-center rounded-full border border-white/20 text-white font-medium hover:bg-white/5 transition-colors"
            >
@@ -72,19 +65,4 @@ export function NeuralHero() {
       </div>
     </section>
   );
-}
-
-function Node({ x, y, delay, mouse }: { x: number, y: number, delay: number, mouse: { x: number, y: number } }) {
-   return (
-      <div 
-         className="absolute h-12 w-12 rounded-xl border border-white/10 bg-black/40 backdrop-blur-md flex items-center justify-center transition-transform duration-100 ease-out shadow-[0_0_15px_rgba(255,255,255,0.05)]"
-         style={{ 
-            left: `${x}%`, 
-            top: `${y}%`,
-            transform: `translate(${mouse.x * (delay + 1)}px, ${mouse.y * (delay + 1)}px)`
-         }}
-      >
-         <div className="h-2 w-2 rounded-full bg-white/50 animate-pulse" style={{ animationDelay: `${delay}s` }}></div>
-      </div>
-   )
 }
