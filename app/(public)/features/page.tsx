@@ -1,4 +1,3 @@
-"use client";
 import Link from "next/link";
 import { ShieldCheck } from "lucide-react";
 import ScannerComponent from "@/app/_components/scanner-component";
@@ -45,7 +44,6 @@ export default function FeaturesPage() {
           <ScannerComponent variant="medium" className="h-[460px] w-full" />
         }
       />
-
       {/* editor and vault */}
       <FeatureSection
         id="editor"
