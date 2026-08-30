@@ -117,7 +117,7 @@ export default function ScannerComponent({ variant = 'wikipedia', className = ""
 
         {/* Scanning Laser */}
         <div 
-          className="absolute left-0 right-0 h-[2px] bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,1)] transition-all duration-75 ease-linear z-10"
+          className="absolute left-0 right-0 h-0.5 bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,1)] transition-all duration-75 ease-linear z-10"
           style={{ top: `${scanProgress}%` }}
         >
           <div className="absolute bottom-full w-full h-16 bg-linear-to-t from-blue-500/20 to-transparent"></div>
