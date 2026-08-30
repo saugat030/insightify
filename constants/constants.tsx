@@ -1,5 +1,5 @@
 import { LayoutDashboard, Users, Link, User, Settings } from "lucide-react";
-import { NavItem } from "@/types/types";
+import { NavItem, PricingTier } from "@/types/types";
 import ScannerComponent from "@/app/_components/scanner-component";
 import TranslateAndExportPreview from "@/app/_components/translate-and-export-preview";
 import AnalyticsPreview from "@/app/_components/analytics-preview";
@@ -98,3 +98,41 @@ export const ACCENTS = {
   emerald: { text: "text-emerald-400", bullet: "text-emerald-500" },
   purple: { text: "text-purple-400", bullet: "text-purple-500" },
 } as const;
+
+export const PRICING_TIERS: PricingTier[] = [
+  {
+    id: "starter",
+    name: "Starter",
+    price: "$0",
+    tagline: "Perfect for casual researchers.",
+    cta: "Get Started",
+    features: ["50 Links / month", "Basic AI Summaries", "7-day retention"],
+  },
+  {
+    id: "pro",
+    name: "Pro",
+    price: "$12",
+    tagline: "For serious knowledge builders.",
+    cta: "Start Free Trial",
+    highlight: true,
+    badge: "Most Popular",
+    features: [
+      "Unlimited Links",
+      "Advanced Gemini 1.5 Pro",
+      "Permanent Graph Storage",
+      "API Access",
+    ],
+  },
+  {
+    id: "team",
+    name: "Team",
+    price: "$49",
+    tagline: "For collaborative research.",
+    cta: "Contact Sales",
+    features: [
+      "Shared Workspaces",
+      "Admin Usage Controls",
+      "SSO & Security Audit",
+    ],
+  },
+];

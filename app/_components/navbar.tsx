@@ -1,13 +1,10 @@
 "use client";
-
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 export function Navbar() {
   const pathname = usePathname();
-
   const isActive = (path: string) => pathname === path;
-
   return (
     <header className="fixed top-0 z-50 w-full border-b border-white/5 bg-background/80 backdrop-blur-md">
       <div className="container mx-auto flex h-16 items-center justify-between px-6">
@@ -51,7 +48,7 @@ export function Navbar() {
               href="/pricing"
               className={`transition-colors hover:text-white ${isActive('/pricing') ? 'text-white' : 'text-zinc-400'}`}
             >
-              Why Us
+              Pricing
             </Link>
           </nav>
         </div>
@@ -70,7 +67,7 @@ export function Navbar() {
             <span className="relative z-10 text-white group-hover:text-white">
               Get Started
             </span>
-            <div className="absolute inset-0 -z-10 translate-y-full bg-gradient-to-t from-zinc-800 to-transparent transition-transform duration-300 group-hover:translate-y-0" />
+            <div className="absolute inset-0 -z-10 translate-y-full bg-linear-to-t from-zinc-800 to-transparent transition-transform duration-300 group-hover:translate-y-0" />
           </Link>
         </div>
       </div>
