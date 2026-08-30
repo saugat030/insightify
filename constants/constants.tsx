@@ -92,3 +92,9 @@ Start typing on the left, and see the formatting on the right!
 | -------- | -------- |
 | Table    | Support  |
 `;
+
+export const ACCENTS = {
+  blue: { text: "text-blue-400", bullet: "text-blue-500" },
+  emerald: { text: "text-emerald-400", bullet: "text-emerald-500" },
+  purple: { text: "text-purple-400", bullet: "text-purple-500" },
+} as const;

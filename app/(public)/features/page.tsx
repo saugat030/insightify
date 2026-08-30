@@ -1,100 +1,10 @@
 "use client";
-
 import Link from "next/link";
-import { Check, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import ScannerComponent from "@/app/_components/scanner-component";
 import TranslateAndExportPreview from "@/app/_components/translate-and-export-preview";
 import AnalyticsPreview from "@/app/_components/analytics-preview";
-
-// Detailed breakdown of the three product capabilities. Each section carries an
-// id so the homepage feature cards can deep-link here (/features#ai-extraction,
-// #editor, #analytics). scroll-mt keeps the heading clear of the fixed navbar.
-//
-// Note: the pipeline/workflow visualisation deliberately lives only on
-// /workflow — this page describes *what* each feature does, not how it flows.
-
-const ACCENTS = {
-  blue: { text: "text-blue-400", bullet: "text-blue-500" },
-  emerald: { text: "text-emerald-400", bullet: "text-emerald-500" },
-  purple: { text: "text-purple-400", bullet: "text-purple-500" },
-} as const;
-
-type Accent = keyof typeof ACCENTS;
-
-// Wraps a preview in the same mac-window frame used on the homepage.
-function PreviewFrame({
-  children,
-  chrome = true,
-}: {
-  children: React.ReactNode;
-  chrome?: boolean;
-}) {
-  return (
-    <div className="relative h-[460px] w-full overflow-hidden rounded-3xl border border-white/10 bg-black/50 shadow-2xl backdrop-blur-xl">
-      {chrome && (
-        <div className="absolute left-0 right-0 top-0 z-10 flex h-10 items-center gap-2 border-b border-white/10 bg-black/20 px-4">
-          <div className="h-3 w-3 rounded-full bg-red-500/20" />
-          <div className="h-3 w-3 rounded-full bg-yellow-500/20" />
-          <div className="h-3 w-3 rounded-full bg-green-500/20" />
-        </div>
-      )}
-      <div className={`${chrome ? "pt-10" : ""} h-full w-full`}>{children}</div>
-    </div>
-  );
-}
-
-function FeatureSection({
-  id,
-  eyebrow,
-  accent,
-  heading,
-  body,
-  points,
-  preview,
-  flip = false,
-}: {
-  id: string;
-  eyebrow: string;
-  accent: Accent;
-  heading: React.ReactNode;
-  body: string;
-  points: string[];
-  preview: React.ReactNode;
-  flip?: boolean;
-}) {
-  const a = ACCENTS[accent];
-  return (
-    <section id={id} className="container mx-auto scroll-mt-32 px-6 py-20">
-      <div className="grid grid-cols-1 items-center gap-16 lg:grid-cols-2">
-        {/* copy */}
-        <div className={flip ? "order-2" : "order-2 lg:order-1"}>
-          <span
-            className={`mb-3 block text-xs font-semibold uppercase tracking-widest ${a.text}`}
-          >
-            {eyebrow}
-          </span>
-
-          <h2 className="mb-4 font-oswald text-3xl font-bold text-white">
-            {heading}
-          </h2>
-          <p className="mb-8 leading-relaxed text-zinc-400">{body}</p>
-
-          <ul className="space-y-4">
-            {points.map((item) => (
-              <li key={item} className="flex items-start text-zinc-300">
-                <Check className={`mr-3 mt-0.5 h-5 w-5 shrink-0 ${a.bullet}`} />
-                <span className="text-[15px] leading-relaxed">{item}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* preview */}
-        <div className={flip ? "order-1" : "order-1 lg:order-2"}>{preview}</div>
-      </div>
-    </section>
-  );
-}
+import FeatureSection from "@/app/_components/features-section";
 
 export default function FeaturesPage() {
   return (
@@ -111,7 +21,7 @@ export default function FeaturesPage() {
         </p>
       </section>
 
-      {/* 1 — AI & Extraction */}
+      {/* AI and extraction */}
       <FeatureSection
         id="ai-extraction"
         eyebrow="AI & Extraction"
@@ -132,13 +42,11 @@ export default function FeaturesPage() {
           "Page title and cover image captured alongside the summary",
         ]}
         preview={
-          <PreviewFrame chrome={false}>
-            <ScannerComponent variant="medium" className="h-full w-full" />
-          </PreviewFrame>
+          <ScannerComponent variant="medium" className="h-[460px] w-full" />
         }
       />
 
-      {/* 2 — Editor & Vault */}
+      {/* editor and vault */}
       <FeatureSection
         id="editor"
         eyebrow="Translate & Export"
@@ -160,14 +68,10 @@ export default function FeaturesPage() {
           "Argon2id derives your key; XSalsa20-Poly1305 seals the content and detects tampering",
           "Your passphrase never reaches our servers — we cannot read your notes, and we cannot reset it",
         ]}
-        preview={
-          <PreviewFrame>
-            <TranslateAndExportPreview />
-          </PreviewFrame>
-        }
+        preview={<TranslateAndExportPreview className="h-[460px] w-full" />}
       />
 
-      {/* 3 — Analytics */}
+      {/* analytics */}
       <FeatureSection
         id="analytics"
         eyebrow="Analytics Dashboard"
@@ -186,14 +90,10 @@ export default function FeaturesPage() {
           "Totals for saved links and editor documents",
           "Usage measured against your plan limits",
         ]}
-        preview={
-          <PreviewFrame>
-            <AnalyticsPreview />
-          </PreviewFrame>
-        }
+        preview={<AnalyticsPreview className="h-[460px] w-full" />}
       />
 
-      {/* CTA → workflow */}
+      {/* cta */}
       <section className="container mx-auto px-6 pt-12 text-center">
         <div className="mx-auto max-w-3xl rounded-3xl border border-white/10 bg-zinc-900/50 px-6 py-16 backdrop-blur-xl">
           <ShieldCheck className="mx-auto mb-5 h-8 w-8 text-zinc-500" />
