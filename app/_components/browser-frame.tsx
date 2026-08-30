@@ -1,3 +1,5 @@
+import { cn } from "@/lib/utils";
+
 type BrowserFrameProps = {
   tabTitle: string;
   // mock url purely decorative
@@ -6,6 +8,7 @@ type BrowserFrameProps = {
   children: React.ReactNode;
   contentClassName?: string;
   decorative?: boolean;
+  // sizing / surface overrides — merged over the defaults by cn()
   className?: string;
 };
 
@@ -32,12 +35,16 @@ export default function BrowserFrame({
   children,
   contentClassName = "",
   decorative = false,
-  className = "",
+  className,
 }: BrowserFrameProps) {
   return (
     <div
       aria-hidden={decorative || undefined}
-      className={`relative flex flex-col overflow-hidden bg-[#0c0c0e] text-left ${decorative ? "pointer-events-none select-none " : ""}${className || "h-full w-full"}`}
+      className={cn(
+        "relative flex h-full w-full flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0c0c0e] text-left shadow-2xl",
+        decorative && "pointer-events-none select-none",
+        className,
+      )}
     >
       {/* browser title bar */}
       <div className="relative z-20 flex shrink-0 flex-col border-b border-white/5 bg-[#18181b]">

@@ -1,12 +1,17 @@
 import Image from "next/image";
 import BrowserFrame from "./browser-frame";
 
-export default function AnalyticsPreview() {
+export default function AnalyticsPreview({
+  className,
+}: {
+  className?: string;
+}) {
   return (
     <BrowserFrame
       tabTitle="Insightify"
       url="insightify.app/dashboard"
       contentClassName="bg-black"
+      className={className}
       decorative
     >
       <Image

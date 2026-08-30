@@ -10,12 +10,17 @@ const SOURCE = `# Project Roadmap
 
 > Focus on latency.`;
 
-export default function TranslateAndExportPreview() {
+export default function TranslateAndExportPreview({
+  className,
+}: {
+  className?: string;
+}) {
   return (
     <BrowserFrame
       tabTitle="Insightify-Editor"
       url="insightify.app/editor"
       contentClassName="bg-[#0e0e10]"
+      className={className}
       decorative
     >
       <div className="flex h-full w-full flex-col">

@@ -62,21 +62,21 @@ export const FEATURES_DATA = {
     desc: "Paste any URL and we strip the noise to find the signal — title, summary and tags extracted automatically, then filed into your library as permanent, searchable knowledge.",
     href: "/features#ai-extraction",
     cta: "Explore AI & Extraction",
-    preview: <ScannerComponent variant="medium" className="h-full w-full" />,
+    preview: <ScannerComponent variant="medium" className="h-[500px] w-full" />,
   },
   editor: {
     title: "Translate & Export",
     desc: "A live Markdown editor with instant translation and one-click PDF export. Flip on the encrypted vault and your notes are sealed in your browser with a passphrase only you hold.",
     href: "/features#editor",
     cta: "Explore the editor & vault",
-    preview: <TranslateAndExportPreview />,
+    preview: <TranslateAndExportPreview className="h-[500px] w-full" />,
   },
   analytics: {
     title: "Analytics Dashboard",
     desc: "See how your library grows over time — extraction activity, saved links and usage trends, broken down in one detailed dashboard.",
     href: "/features#analytics",
     cta: "Explore the dashboard",
-    preview: <AnalyticsPreview />,
+    preview: <AnalyticsPreview className="h-[500px] w-full" />,
   },
 };
 

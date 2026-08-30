@@ -49,13 +49,8 @@ export function FeaturePrism() {
           </div>
         </div>
 
-        {/* right side preview plane */}
-        <div className="h-[500px] w-full rounded-3xl border border-white/10 bg-black/50 backdrop-blur-xl shadow-2xl overflow-hidden relative">
-          {/* each preview carries its own browser chrome */}
-          <div className="h-full w-full">
-            {current.preview}
-          </div>
-        </div>
+        {/* right side preview plane — each preview is its own browser frame */}
+        {current.preview}
       </div>
     </section>
   );
