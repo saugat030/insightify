@@ -56,20 +56,12 @@ export const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-// The homepage feature showcase. One entry per major product capability:
-//   1. AI extraction (the links/scanner flow)
-//   2. The Markdown editor + encrypted vault
-//   3. The analytics dashboard
-//
-// `chrome` controls whether FeaturePrism wraps the preview in the mac window
-// frame — the scanner ships its own browser chrome, so it opts out.
 export const FEATURES_DATA = {
   extract: {
     title: "AI & Extraction",
     desc: "Paste any URL and we strip the noise to find the signal — title, summary and tags extracted automatically, then filed into your library as permanent, searchable knowledge.",
     href: "/features#ai-extraction",
     cta: "Explore AI & Extraction",
-    chrome: false,
     preview: <ScannerComponent variant="medium" className="h-full w-full" />,
   },
   editor: {
@@ -77,7 +69,6 @@ export const FEATURES_DATA = {
     desc: "A live Markdown editor with instant translation and one-click PDF export. Flip on the encrypted vault and your notes are sealed in your browser with a passphrase only you hold.",
     href: "/features#editor",
     cta: "Explore the editor & vault",
-    chrome: true,
     preview: <TranslateAndExportPreview />,
   },
   analytics: {
@@ -85,7 +76,6 @@ export const FEATURES_DATA = {
     desc: "See how your library grows over time — extraction activity, saved links and usage trends, broken down in one detailed dashboard.",
     href: "/features#analytics",
     cta: "Explore the dashboard",
-    chrome: true,
     preview: <AnalyticsPreview />,
   },
 };

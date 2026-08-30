@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import BrowserFrame from "./browser-frame";
 
 type ScannerComponentProps = {
   variant?: 'wikipedia' | 'medium';
@@ -17,43 +18,17 @@ export default function ScannerComponent({ variant = 'wikipedia', className = ""
   }, []);
 
   return (
-    <div className={`relative bg-[#0c0c0e] overflow-hidden flex flex-col text-left ${className || "rounded-xl border border-white/10 shadow-2xl order-1 lg:order-2 h-[500px]"}`}>
-      
-      {/* Browser Chrome / Title Bar */}
-      <div className="flex flex-col bg-[#18181b] border-b border-white/5 relative z-20">
-        {/* Top row: Window controls and Tabs */}
-        <div className="flex items-center px-4 pt-3 pb-2 space-x-4">
-          <div className="flex space-x-2">
-            <div className="h-3 w-3 rounded-full bg-red-500/80"></div>
-            <div className="h-3 w-3 rounded-full bg-yellow-500/80"></div>
-            <div className="h-3 w-3 rounded-full bg-green-500/80"></div>
-          </div>
-          <div className="flex-1 flex text-xs text-zinc-400">
-            <div className="bg-[#27272a] px-4 py-1.5 rounded-t-md border-t border-x border-white/10 flex items-center gap-2 shadow-sm">
-              <span className={`w-3 h-3 text-[8px] font-bold flex items-center justify-center rounded-sm ${variant === 'wikipedia' ? 'bg-white text-black' : 'bg-black text-white border border-zinc-600'}`}>
-                {variant === 'wikipedia' ? 'W' : 'M'}
-              </span>
-              {variant === 'wikipedia' ? 'Artificial intelligence - Wikipedia' : 'The Future of AI - Medium'}
-            </div>
-          </div>
-        </div>
-        
-        {/* Address Bar Row */}
-        <div className="flex items-center px-4 py-2 bg-[#27272a] gap-4">
-          <div className="flex gap-3 text-zinc-400">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-            <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-          </div>
-          <div className="flex-1 flex items-center bg-[#18181b] rounded-md px-3 py-1.5 text-xs text-zinc-300 border border-white/5 shadow-inner">
-            <svg className="w-3 h-3 mr-2 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-            {variant === 'wikipedia' ? 'en.wikipedia.org/wiki/Artificial_intelligence' : 'medium.com/@tech/the-future-of-ai'}
-          </div>
-        </div>
-      </div>
-
-      {/* Browser Viewport & Content */}
-      <div className="relative flex-1 flex bg-[#ffffff] text-zinc-800 overflow-hidden">
+    <BrowserFrame
+      tabTitle={variant === "wikipedia" ? "Artificial intelligence - Wikipedia" : "The Future of AI - Medium"}
+      url={variant === "wikipedia" ? "en.wikipedia.org/wiki/Artificial_intelligence" : "medium.com/@tech/the-future-of-ai"}
+      favicon={
+        <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm text-[8px] font-bold ${variant === "wikipedia" ? "bg-white text-black" : "border border-zinc-600 bg-black text-white"}`}>
+          {variant === "wikipedia" ? "W" : "M"}
+        </span>
+      }
+      className={className || "rounded-xl border border-white/10 shadow-2xl order-1 lg:order-2 h-[500px]"}
+      contentClassName="flex bg-white text-zinc-800"
+    >
         
         {variant === 'wikipedia' ? (
           <>
@@ -179,7 +154,6 @@ export default function ScannerComponent({ variant = 'wikipedia', className = ""
             )}
           </div>
         )}
-      </div>
-    </div>
+    </BrowserFrame>
   );
 }

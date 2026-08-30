@@ -49,17 +49,10 @@ export function FeaturePrism() {
           </div>
         </div>
 
-        {/* right */}
+        {/* right side preview plane */}
         <div className="h-[500px] w-full rounded-3xl border border-white/10 bg-black/50 backdrop-blur-xl shadow-2xl overflow-hidden relative">
-          {/* mac window chrome — skipped by previews that ship their own */}
-          {current.chrome && (
-            <div className="absolute top-0 left-0 right-0 h-10 border-b border-white/10 bg-black/20 flex items-center px-4 gap-2 z-10">
-              <div className="h-3 w-3 rounded-full bg-red-500/20"></div>
-              <div className="h-3 w-3 rounded-full bg-yellow-500/20"></div>
-              <div className="h-3 w-3 rounded-full bg-green-500/20"></div>
-            </div>
-          )}
-          <div className={`${current.chrome ? "pt-10" : ""} h-full w-full`}>
+          {/* each preview carries its own browser chrome */}
+          <div className="h-full w-full">
             {current.preview}
           </div>
         </div>
