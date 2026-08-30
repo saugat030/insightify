@@ -19,20 +19,18 @@ export default function TranslateAndExportPreview() {
       decorative
     >
       <div className="flex h-full w-full flex-col">
-        {/* tab bar — mirrors the real editor's tabs */}
+        {/* tab bar*/}
         <div className="flex shrink-0 items-end gap-0 border-b border-white/5 bg-[#0e0e10] px-2 pt-2">
-          {/* active tab: encrypted (lock icon, like a vault-enabled doc) */}
+          {/* active tab with encrypted lock icon like a vault enabled doc */}
           <div className="relative z-10 -mb-px flex min-w-[120px] max-w-[200px] shrink-0 items-center gap-2 rounded-t-lg border-x border-t border-white/10 bg-[#1a1a1e] px-4 py-2.5 text-xs font-medium text-white">
             <Lock className="h-3 w-3 shrink-0 text-emerald-400" />
             <span className="truncate">roadmap.md</span>
           </div>
-
           {/* inactive plaintext tab */}
           <div className="flex min-w-[120px] max-w-[200px] shrink-0 items-center gap-2 rounded-t-lg border-x border-t border-transparent px-4 py-2.5 text-xs font-medium text-zinc-500">
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-600" />
             <span className="truncate">notes.md</span>
           </div>
-
           {/* new tab affordance */}
           <div className="ml-1 mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sm text-zinc-500">
             +
