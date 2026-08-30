@@ -4,12 +4,6 @@ import { DottedGlowBackground } from "@/components/ui/dotted-glow-background";
 export function NeuralHero() {
   return (
     <section className="relative min-h-[90vh] flex flex-col items-center justify-center overflow-hidden">
-      {/* Ambient dotted glow.
-          The site is dark-only and <html> carries no `dark` class, so the
-          component's dark-mode detection falls back to the visitor's OS
-          preference — on a light-mode machine it would paint near-black dots on
-          our black background. Passing both the light and dark colours
-          explicitly keeps it correct either way. */}
       <DottedGlowBackground
         className="pointer-events-none"
         gap={26}
@@ -23,9 +17,7 @@ export function NeuralHero() {
         speedMin={0.25}
         speedMax={1.1}
       />
-
-      {/* Fades the dot field out toward the edges so it reads as ambience
-          rather than a hard-edged grid. */}
+      {/* fade towards the end */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0"
@@ -35,10 +27,10 @@ export function NeuralHero() {
         }}
       />
 
-      {/* Main Content */}
+      {/* main content */}
       <div className="relative z-10 text-center px-6 max-w-5xl mx-auto">
         <h1 className="animate-reveal delay-100 text-6xl md:text-8xl font-bold tracking-tight text-white mb-6 leading-tight font-oswald">
-          The <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-white">External Brain</span> <br />
+          The <span className="text-transparent bg-clip-text bg-linear-to-r from-blue-400 via-purple-400 to-white">External Brain</span> <br />
           for the Internet.
         </h1>
 
