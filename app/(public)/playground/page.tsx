@@ -1,55 +1,13 @@
 "use client";
-
 import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Panel, Group, Separator } from "react-resizable-panels";
-import { FileDown, Lock, Plus, Save, Sparkles } from "lucide-react";
-
+import { FileDown, Lock, Plus, Sparkles } from "lucide-react";
 import { DEFAULT_MARKDOWN } from "@/constants/constants";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { LockedButton } from "@/app/_components/locked-button";
 
-// A public, in-memory-only markdown playground. It deliberately does NOT:
-//  - persist to the database or localStorage (nothing is saved anywhere)
-//  - export to PDF
-//  - allow more than one document/tab
-// Those are premium features, gated behind a subscription tooltip.
-
-// A locked control: styled like an action button but inert. It is intentionally
-// NOT `disabled` so the tooltip still fires on hover, and its onClick is a no-op.
-function LockedButton({
-  children,
-  tooltip,
-  className = "",
-}: {
-  children: React.ReactNode;
-  tooltip: string;
-  className?: string;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-disabled="true"
-          onClick={(e) => e.preventDefault()}
-          className={`flex items-center gap-1.5 cursor-not-allowed select-none ${className}`}
-        >
-          {children}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent className="flex items-center gap-1.5">
-        <Sparkles className="h-3 w-3" />
-        {tooltip}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
+// In memory markdown playground persistence, PDF export, and multiple documents are premium features.
 export default function PlaygroundPage() {
   const [markdown, setMarkdown] = useState(DEFAULT_MARKDOWN);
 
