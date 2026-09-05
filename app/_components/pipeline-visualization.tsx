@@ -1,5 +1,4 @@
 "use client";
-
 import { useCallback, useState } from "react";
 import { ReactNode } from "react";
 import {
@@ -27,18 +26,8 @@ import {
   FileDown,
   BarChart3,
 } from "lucide-react";
-
-// Two pipelines and where they converge:
-//   • blue    — AI extraction: URL → scrape/clean → Gemini → library
-//   • emerald — editor & vault: write → auto-save → encrypt in browser → stored
-//   • purple  — both feed the analytics dashboard
-//
-// The copy here mirrors what the code actually does (lib/scraper.ts strips
-// script/nav/header/footer/iframe, lib/gemini.ts calls gemini-2.5-flash-lite and
-// parses JSON, lib/vault/crypto.ts derives with Argon2id and seals with
-// XSalsa20-Poly1305) — keep them in sync if the implementation changes.
-
-type Accent = "blue" | "emerald" | "purple";
+import { Accent } from "@/types/types";
+import { EDGE_COLORS } from "@/constants/constants";
 
 const ACCENTS: Record<Accent, { icon: string; handle: string; hover: string }> = {
   blue: {
@@ -56,12 +45,6 @@ const ACCENTS: Record<Accent, { icon: string; handle: string; hover: string }> =
     handle: "!bg-purple-500",
     hover: "hover:border-purple-500/40",
   },
-};
-
-const EDGE_COLORS: Record<Accent, string> = {
-  blue: "#3b82f6",
-  emerald: "#10b981",
-  purple: "#a855f7",
 };
 
 interface WorkflowNodeData {
@@ -123,7 +106,7 @@ const LANE_B = 280; // editor & vault
 const COL = 350;
 
 const initialNodes: Node[] = [
-  // --- Lane A: AI & Extraction -------------------------------------------
+ // ai and extration
   {
     id: "a1",
     type: "saasNode",
@@ -177,7 +160,7 @@ const initialNodes: Node[] = [
     },
   },
 
-  // --- Lane B: Editor & Encrypted Vault ----------------------------------
+  // editoir and encrypt lanes
   {
     id: "b1",
     type: "saasNode",
@@ -231,7 +214,7 @@ const initialNodes: Node[] = [
     },
   },
 
-  // --- Convergence: Analytics --------------------------------------------
+  // meeting point of both lanes ie analytics
   {
     id: "c1",
     type: "saasNode",
@@ -273,7 +256,7 @@ export default function PipelineVisualization() {
   const [nodes, setNodes] = useState<Node[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
 
-  // Allow nodes to be dragged, but prevent users from deleting nodes
+  // allow nodes to be dragged, but deletion
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
     [],
