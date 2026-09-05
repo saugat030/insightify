@@ -1,5 +1,5 @@
 import { LayoutDashboard, Users, Link, User, Settings } from "lucide-react";
-import { NavItem, PricingTier } from "@/types/types";
+import { Accent, NavItem, PricingTier } from "@/types/types";
 import ScannerComponent from "@/app/_components/scanner-component";
 import TranslateAndExportPreview from "@/app/_components/translate-and-export-preview";
 import AnalyticsPreview from "@/app/_components/analytics-preview";
@@ -136,3 +136,9 @@ export const PRICING_TIERS: PricingTier[] = [
     ],
   },
 ];
+
+export const EDGE_COLORS: Record<Accent, string> = {
+  blue: "#3b82f6",
+  emerald: "#10b981",
+  purple: "#a855f7",
+};

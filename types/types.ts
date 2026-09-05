@@ -18,3 +18,5 @@ export interface PricingTier {
   highlight?: boolean;
   badge?: string;
 }
+
+export type Accent = "blue" | "emerald" | "purple";
