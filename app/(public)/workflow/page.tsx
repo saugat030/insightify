@@ -1,13 +1,9 @@
 "use client";
-
 import Link from "next/link";
 import PipelineVisualization from "@/app/_components/pipeline-visualization";
 
-// Visualises how the three product capabilities actually flow. The detailed
-// description of each feature lives on /features — this page is only the map.
-
-// `text` matches each lane's colour in the diagram, so the legend still maps
-// onto the pipeline without needing an indicator dot.
+// visualises how the three product capabilities actually flow.
+// "text" matches each lane's colour in the diagram
 const LANES = [
   {
     text: "text-blue-400",
