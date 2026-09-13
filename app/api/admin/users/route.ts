@@ -1,36 +1,12 @@
 import { NextResponse } from "next/server";
-import { verifyAccessToken } from "@/lib/auth";
+import { requireAdmin } from "@/lib/requireAuth";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
 
 export async function GET(req: Request) {
   try {
-    await connectToDb();
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json(
-        { error: "Missing Token or invalid header structure." },
-        { status: 401 },
-      );
-    }
-
-    const token = authHeader.split(" ")[1];
-    const payload = verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
-
-    const user = await User.findById(payload.userId);
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    if (user.role !== "admin") {
-      return NextResponse.json(
-        { error: "Unauthorized. Try signing in with an admin account." },
-        { status: 403 },
-      );
-    }
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
 
     // ---- Offset pagination + optional search ----
     const { searchParams } = new URL(req.url);
@@ -78,24 +54,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    await connectToDb();
-
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const token = authHeader.split(" ")[1];
-    const payload = verifyAccessToken(token);
-
-    if (!payload) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
-
-    const requestUser = await User.findById(payload.userId);
-    if (!requestUser || requestUser.role !== "admin") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
 
     const body = await req.json();
     const { username, email, password, role, tier } = body;

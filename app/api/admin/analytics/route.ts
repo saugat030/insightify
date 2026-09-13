@@ -4,7 +4,7 @@ import User from "@/models/User";
 import Link from "@/models/Link";
 import MarkdownDoc from "@/models/MarkdownDoc";
 import RefreshToken from "@/models/RefreshToken";
-import { verifyAccessToken, AccessTokenPayload } from "@/lib/auth";
+import { requireAdmin } from "@/lib/requireAuth";
 import {
   DAY_MS,
   TREND_DAYS,
@@ -22,22 +22,8 @@ import {
 
 export async function GET(req: NextRequest) {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const token = authHeader.split(" ")[1];
-    const payload: AccessTokenPayload | null = verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
-
-    await connectToDb();
-
-    const requester = await User.findById(payload.userId).select("role");
-    if (!requester || requester.role !== "admin") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
 
     const since = new Date(Date.now() - (TREND_DAYS - 1) * DAY_MS);
     const now = new Date();

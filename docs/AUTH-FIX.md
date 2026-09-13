@@ -14,6 +14,12 @@ is easy to tell apart from closed work at a glance.
 | 2 | **F1** | Google OAuth issued tokens with the wrong claim shape | ✅ Fixed |
 | 2 | **F11** | Cookie flags differed between the two login paths | ✅ Fixed — fell out of F1 |
 | 3 | **F2** | Google account linking did not check `email_verified` | ✅ Fixed (stage 1 of 2 — see entry) |
+| 4 | **F5** | Password change did not revoke sessions | ✅ Fixed |
+| 4 | **F10** | Login wiped every other session | ✅ Fixed |
+| 4 | **F20** | No "sign out of all devices" | ✅ Fixed |
+| 4 | **F22** | `deleteMany` → `create` in login was not atomic | ✅ Dissolved by the F10 fix |
+| 5 | **F18** | Auth boilerplate duplicated across ~15 route handlers | ✅ Fixed |
+| 5 | **F21** | Revocation lagged up to 15 minutes | ✅ Fixed for global revocation |
 
 ---
 
@@ -286,3 +292,243 @@ Google-linked users sign in normally and get `emailVerified` backfilled. The one
 behaviour change is that a user who registered with a password and then clicks
 "Sign in with Google" now gets a clear error instead of being silently linked —
 correct until their address is proven, and self-resolving once OTP ships.
+
+---
+
+## 4 — F5, F10, F20 · Session management: per-device sessions, sign-out-everywhere, and revocation on password change
+
+**Files:** [`lib/session.ts`](../lib/session.ts),
+[`app/api/auth/logout-all/route.ts`](../app/api/auth/logout-all/route.ts) (new),
+[`app/api/auth/logout/route.ts`](../app/api/auth/logout/route.ts),
+[`app/api/auth/change-password/route.ts`](../app/api/auth/change-password/route.ts),
+[`hooks/useAuth.tsx`](../hooks/useAuth.tsx)
+
+*Also closes **F22**, which dissolved rather than being fixed — see below.*
+
+These three were taken as one pass because they are the same problem seen from
+three angles: the session table was being managed ad hoc at a single call site,
+so it could express exactly one session per user and nothing else.
+
+### The issues
+
+**F10 — login wiped every other session.** `issueSession()` ran
+`RefreshToken.deleteMany({ user })` before creating its own row, so at most one
+row could exist per user. Signing in on a phone silently signed you out on your
+laptop, with no indication until the laptop's next refresh.
+
+**F20 — no "sign out of all devices".** Not a missing button so much as a
+missing *capability*: with at most one row per user there was nothing to
+enumerate, so a global sign-out could not be expressed.
+
+**F5 — a password change revoked nothing.** `change-password` never touched
+`RefreshToken`, so an attacker holding a stolen refresh token kept access
+through the exact action taken to lock them out. This is the one that actually
+mattered — it defeats the main reason people change passwords.
+
+### The fix
+
+`lib/session.ts` grew from one function into the session lifecycle:
+
+| Export | Role |
+| --- | --- |
+| `issueSession(user)` | Mints a session. **No longer deletes anything.** |
+| `revokeSession(jti)` | One device, by the handle in its own cookie. |
+| `revokeAllSessions(userId)` | Every device. Returns the count. |
+| `clearSessionCookie()` | Clears the caller's cookie. |
+
+**F10:** the `deleteMany` is gone. Rows are per-device, and the schema already
+supported this — nothing else had to change.
+
+A **cap of 5 sessions per user** was added here as the review suggested, and
+then **removed again before this work was committed** — see the revision note at
+the end of this entry. Sessions are uncapped.
+
+**F20:** `POST /api/auth/logout-all` (Bearer) revokes every row for the caller
+and clears their cookie, exposed on the client as `useAuth().logoutAll()`.
+This is only expressible *because* F10 made multiple rows possible.
+
+**F5:** `change-password` now calls `revokeAllSessions()` after saving the new
+password, then **issues the caller a fresh session**. This deviates from the
+review's literal suggestion ("`deleteMany`, and clear the caller's cookie") on
+purpose: clearing the cookie signs out the very person who just changed their
+password. Re-issuing achieves the same security result — every other device is
+dead — without that. The response carries the new `accessToken` and a
+`revokedSessions` count.
+
+`logout` was also refactored onto `revokeSession()` / `clearSessionCookie()`,
+removing its duplicated cookie-name constant and inline query.
+
+### Revision — the session cap was removed
+
+The cap never rejected a login; it evicted the oldest row. But eviction was by
+`createdAt`, and **age is not staleness** — a stable session is the oldest
+precisely because it is stable. Two ordinary patterns break under it:
+
+- **More than five real devices.** Past five, every login evicts one still in
+  use, so the user is perpetually signed out of something. This never
+  converges — it thrashes indefinitely.
+- **Private windows mixed with a stable session.** Each private window gets its
+  own cookie jar and its own row, and that row outlives the window until the
+  30-day TTL. Five throwaway private logins are five rows *newer* than the phone
+  that has worked for a month — so the phone is evicted by five sessions whose
+  cookies no longer exist.
+
+Removing it costs nothing: growth is already bounded by the TTL index, rows are
+tiny, and no attack is prevented (rows come only from *successful* logins, so
+anyone making them already has the credentials — brute force is F6's job). The
+obvious repair, evicting by `lastUsedAt` instead, needs a write on every
+refresh — the same cost that got the TTL reduction rejected in §5.
+
+Worth revisiting once rotation (F4) lands: rotation makes refresh a write
+anyway and keeps an active session at one row, so `lastUsedAt` eviction would be
+free then — and it would evict the genuinely idle rather than the merely old.
+
+### Why F22 dissolved
+
+F22 was that `deleteMany` → `create` in login is two awaits with no transaction,
+so concurrent logins could interleave. **Removing the `deleteMany` removed the
+sequence.** Two simultaneous logins are now *supposed* to produce two rows, and with the cap
+removed there is no pruning step to reconcile either. There is no window in
+which a user ends up with no session.
+
+### Verification
+
+`npx tsc --noEmit` clean; `npx next build` compiles with `/api/auth/logout-all`
+registered. Prune query checked against the real model — filter, `sort
+{createdAt: -1}`, `skip 5`, and `createdAt` confirmed present on the schema.
+
+**Not exercised against a live database.** Row-level behaviour — that pruning
+keeps exactly the newest five, that `revokeAllSessions` returns the right count,
+that a second device genuinely survives a first device's login — is reasoned
+from the code, not observed. These are worth a manual pass once the app is
+running against a real database.
+
+### Blast radius
+
+Behaviour changes users will notice, all intended:
+
+- Signing in no longer signs you out elsewhere, with no limit on how many
+  devices a user keeps signed in.
+- Changing your password signs out every *other* device; the tab you did it in
+  keeps working.
+
+**Still open and directly related:** revocation lags by up to the access-token
+TTL (**F21**) — a revoked device keeps working until its access token expires,
+because access tokens are stateless and never checked against the DB. Sessions
+are also not *enumerable* by the user: there is no "here are your 5 devices"
+screen, only the all-or-nothing sign-out. And **no UI button** calls
+`logoutAll()` yet, the same gap `change-password` has (**F12**).
+
+---
+
+## 5 — F18, F21 · One auth helper, and immediate global revocation
+
+**Files:** [`lib/requireAuth.ts`](../lib/requireAuth.ts) (new),
+[`models/User.ts`](../models/User.ts), [`lib/session.ts`](../lib/session.ts),
+[`lib/auth.ts`](../lib/auth.ts), and 10 route files.
+
+Taken together because F21's check has exactly one sensible home: inside the
+helper F18 creates. Doing F21 first would have meant editing 15 call sites — the
+same duplication that produced F1.
+
+### The issues
+
+**F18 — the auth preamble was copy-pasted 15 times.** Read the header, check the
+`Bearer ` prefix, split on a space, verify, load the user, 404 if missing. Every
+copy differed slightly: four distinct error messages for the same condition,
+`"Authorization"` vs `"authorization"`, some checking the user existed and some
+not. Two files had grown private helpers (`authUserId`, `checkAdmin`) that did
+subtly different things. This is the drift that let F1 ship.
+
+**F21 — revocation lagged up to 15 minutes.** Deleting the allow-list row killed
+future *refreshes*, but the access token already in the attacker's hands stayed
+valid until it expired, because nothing checked it against the database.
+
+### The fix
+
+`lib/requireAuth.ts` exports two functions returning a discriminated result, so
+a caller either has a user or has a response to return:
+
+```ts
+const auth = await requireAuth(req);
+if (!auth.ok) return auth.response;
+const { user } = auth;        // also: auth.userId, auth.payload
+```
+
+`requireAdmin(req)` is `requireAuth` plus a role check. `change-password` passes
+`{ withPassword: true }` for the one case needing the `select:false` field.
+
+**F21** adds `User.sessionsRevokedAt`. `revokeAllSessions()` stamps it, and
+`requireAuth()` rejects any token issued before it. Because the user document
+was *already* being loaded, this costs **no extra query**.
+
+The review's own suggestion — shorten the TTL to ~5 minutes — was **rejected**.
+It triples refresh traffic, and once rotation (F4) turns every refresh into a
+write, that cost lands on the write path. It also only moves the lag to 5
+minutes; it never makes revocation immediate. `sessionsRevokedAt` is immediate
+and free. The TTL stays at 15 minutes.
+
+#### The `iat` precision trap
+
+`iat` is second-precision, but `sessionsRevokedAt` is a millisecond `Date`.
+`change-password` revokes and then *immediately* re-issues, so a naive
+`iat * 1000 < sessionsRevokedAt` rejects the token it just minted. The check
+compares whole seconds instead:
+
+```ts
+payload.iat < Math.floor(sessionsRevokedAt.getTime() / 1000)
+```
+
+A token minted in the same second as the revocation survives. The cost is a
+sub-second window where a token issued just before revocation is still accepted,
+which is the right trade against breaking the re-issue path.
+
+A token carrying no `iat` at all is treated as stale — fail closed.
+
+### What this deliberately does *not* cover
+
+**Per-device logout still lags.** `sessionsRevokedAt` is per *user*, so it
+catches the global cases — sign-out-everywhere and password change — which are
+the ones that matter after a device is lost or an account is compromised. Making
+single-device logout immediate would need the access token to carry its `jti`
+and a `RefreshToken` read on every request. Not worth it; the remaining lag is
+accepted and recorded in F21.
+
+### Verification
+
+`npx tsc --noEmit` clean; `npx next build` compiles. `verifyAccessToken` now has
+**exactly one caller** in the codebase (`lib/requireAuth.ts`) — down from 15.
+The staleness rule was tested directly across its edge cases:
+
+| Case | Stale? |
+| --- | --- |
+| Never revoked | no |
+| Token 1 hour before revocation | **yes** |
+| Token 1 second before revocation | **yes** |
+| Token in the *same second*, revoked at +500ms | no — the re-issue survives |
+| Token 1 second after revocation | no |
+| No `iat`, sessions revoked | **yes** — fail closed |
+| No `iat`, never revoked | no |
+
+**Not exercised against a live database.** The refactor's behaviour is
+structural and type-checked, but that all 10 routes still behave identically
+under real requests has not been observed. Given this touched every protected
+endpoint, it is the change in this series most worth a manual smoke test.
+
+### Blast radius
+
+Error *messages* changed — four variants collapsed into
+`"Unauthorized: No token provided"`, `"Unauthorized: Invalid or expired token"`,
+`"Unauthorized: Session revoked"`, `"User not found"`, and
+`"Forbidden: Admin access required"`. Status codes are unchanged, and nothing in
+the client branches on message text; it only renders it.
+
+Two routes — `links/[id]` and `markdown` — did not previously load the user and
+now do, costing one indexed `_id` lookup each. That is the price of enforcing
+revocation uniformly rather than in 12 of 16 files, and it is what makes F21's
+guarantee hold everywhere instead of almost everywhere.
+
+Narrow `.select()` projections in `vault`, `analytics` and `admin/analytics`
+were dropped in favour of the full document. Mixing `+password` with an
+inclusion projection is a Mongoose footgun, and the saving was negligible on a
+single document.

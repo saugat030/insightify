@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 export interface AccessTokenPayload {
   userId: string;
   email: string;
+  iat?: number;
 }
 export interface RefreshTokenPayload {
   userId: string;

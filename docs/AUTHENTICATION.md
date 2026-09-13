@@ -36,7 +36,8 @@
 10. [Endpoint reference](#10-endpoint-reference)
 
 > **Fix log:** closed findings are marked ✅ here and written up in
-> [`AUTH-FIX.md`](./AUTH-FIX.md). Fixed so far: **F8**, **F1**, **F11**, **F2**.
+> [`AUTH-FIX.md`](./AUTH-FIX.md). Fixed so far: **F8**, **F1**, **F11**, **F2**, **F5**, **F10**,
+> **F20**, **F22**, **F18**, **F21**.
 
 ---
 
@@ -85,7 +86,9 @@ stateless JWT scheme cannot do.
 | [`lib/auth.ts`](../lib/auth.ts) | Signs/verifies both token types. Throws at import if `JWT_SECRET` / `JWT_REFRESH_SECRET` are missing. |
 | [`models/User.ts`](../models/User.ts) | User schema, bcrypt pre-save hook, `comparePassword()`, tier quota helpers. |
 | [`models/RefreshToken.ts`](../models/RefreshToken.ts) | Refresh-token allow-list, with a TTL index for automatic cleanup. |
-| [`hooks/useAuth.tsx`](../hooks/useAuth.tsx) | `AuthProvider` — holds the access token and user object; `login`/`register`/`googleLogin`/`logout`. |
+| [`lib/requireAuth.ts`](../lib/requireAuth.ts) | **The one auth gate for API routes** — `requireAuth()` / `requireAdmin()`. Verifies the bearer token, loads the user, enforces `sessionsRevokedAt`. The only caller of `verifyAccessToken`. |
+| [`lib/session.ts`](../lib/session.ts) | **The session lifecycle in one place** — `issueSession`, `revokeSession`, `revokeAllSessions`, `clearSessionCookie`. Both login paths go through it. |
+| [`hooks/useAuth.tsx`](../hooks/useAuth.tsx) | `AuthProvider` — holds the access token and user object; `login`/`register`/`googleLogin`/`logout`/`logoutAll`. |
 | [`lib/axiosInstance.ts`](../lib/axiosInstance.ts) | Attaches the bearer token; intercepts `401` and retries once after refreshing. |
 | [`middleware.ts`](../middleware.ts) | Edge cookie *presence* check for a small set of routes. |
 | [`app/_components/private/rolegaurd.tsx`](../app/_components/private/rolegaurd.tsx) | Client-side role gate for private layouts. |
@@ -99,7 +102,7 @@ stateless JWT scheme cannot do.
 
 ```
 username, email (unique, lowercased), emailVerified (Boolean, default false),
-password (bcrypt, select:false),
+sessionsRevokedAt (Date|null), password (bcrypt, select:false),
 googleId (unique, sparse), profilePicture, role ("admin" | "user"),
 tier ("free" | "pro"), linksCreatedCount, lastResetDate, createdAt,
 vaultEnabled, vaultSalt, vaultKdf, vaultVerifier      ← see ENCRYPTED_VAULT.md
@@ -108,7 +111,7 @@ vaultEnabled, vaultSalt, vaultKdf, vaultVerifier      ← see ENCRYPTED_VAULT.md
 - `emailVerified` records whether the owner has *proved* they control the
   address. Google sign-ups set it `true` (the ID token is Google's proof);
   password sign-ups stay `false` until the v2 OTP flow ([§9.2](#92-email-verification-otp--v2))
-  lands. It gates Google account linking — see [F2](#-f2--google-account-linking-does-not-check-email_verified--fixed).
+  lands. It gates Google account linking — see [F2](#f2--google-account-linking-does-not-check-email_verified--fixed-stage-1-of-2).
 - `password` is **not required** when `googleId` is present, so Google-only
   accounts have no password at all.
 - `password` uses `select: false` — it is never returned unless a query
@@ -182,8 +185,7 @@ POST /api/auth/login { email, password }
   ├─ user.comparePassword(password)      ─ fail ->    401 "Invalid email or password"
   ├─ generateAccessToken({userId, email})
   ├─ generateRefreshToken({userId})  ->  { token, jti }
-  ├─ RefreshToken.deleteMany({ user })      ← wipes ALL other sessions
-  ├─ RefreshToken.create({ user, jti, expires: +30d })
+  ├─ RefreshToken.create({ user, jti, expires: +30d })   ← per-device row
   ├─ Set-Cookie refreshToken=<jwt>  httpOnly, secure(prod), sameSite=lax, 30d
   └─ 200 { user, accessToken }
 ```
@@ -280,72 +282,132 @@ POST /api/auth/change-password { oldPassword, newPassword }   (Bearer required)
   ├─ verify access token, load user WITH +password
   ├─ newPassword length >= 8
   ├─ comparePassword(oldPassword)          -> 401 if wrong
-  └─ user.password = newPassword; save()   (hook re-hashes)
+  ├─ user.password = newPassword; save()   (hook re-hashes)
+  ├─ revokeAllSessions(user)               ← every device, including this one
+  └─ issueSession(user)                    ← caller gets a fresh session back
 ```
 
 ---
 
 ### 5.9 Session lifecycle across devices
 
-Because `login` runs `RefreshToken.deleteMany({ user })` **before** creating its
-own row, at most one refresh-token row can exist per user. The system is
-therefore **effectively single-session**, though nothing in the UI says so.
+**Sessions are per-device.** Each login writes its own `RefreshToken` row and
+touches nobody else's, so signing in on a phone leaves the laptop signed in.
+There is **no cap** on concurrent sessions — see
+[the note below](#why-there-is-no-session-cap). Both login paths go through
+`issueSession()`, so this is identical for password and Google sign-in.
+
+> **This section used to describe the opposite.** Until the F10 fix, `login` ran
+> `RefreshToken.deleteMany({ user })` before creating its own row, so at most one
+> row could exist and every new login silently signed out every other device.
+> The history is kept in [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change).
 
 #### Logging in on a second device
 
 | Step | `refreshtokens` rows | Device A | Device B |
 | --- | --- | --- | --- |
 | A logs in | `jti_A` | working | — |
-| B logs in | `jti_A` **deleted**, `jti_B` created | **orphaned** — its cookie references a row that no longer exists | working |
-| next 0–15 min | `jti_B` | **still fully working** — the access token is stateless and never checked against the DB | working |
-| A's access token expires, or A reloads | `jti_B` | refresh → `findOne({jti_A})` → no match → `401` → cleared, `RoleGuard` redirects to `/login` | working |
+| B logs in | `jti_A`, `jti_B` — **both kept** | **still working** | working |
+| A reloads | `jti_A`, `jti_B` | refresh → `findOne({jti_A})` → hit → new access token | working |
 
-Two consequences:
+Each browser profile has its own cookie jar, so a normal window and a private
+window count as two devices and each gets its own row. That is now the intended
+behaviour rather than a source of surprise logouts.
+
+#### Why there is no session cap
+
+A cap of 5 (keep the newest, prune the rest) was implemented as the review
+suggested, then **removed**. It never rejects a login — the newest row always
+survives — but it evicts by `createdAt`, and **age is not staleness**. A stable
+session is the oldest *precisely because* it is stable. Two ordinary patterns
+break under it:
+
+**More than five real devices.** Phone, laptop, work laptop, tablet, desktop,
+and one more is not unusual. Past five, *every* login evicts a device that is
+still in use, so the user is perpetually signed out of something at random. This
+never converges — it thrashes for as long as they keep using all their devices.
+
+**Private/incognito windows mixed with a stable session.** Each private window
+is its own cookie jar, so each login writes its own row — and that row outlives
+the window, lingering until the 30-day TTL sweeps it. Five throwaway private
+logins are therefore five rows *newer* than the phone that has been quietly
+working for a month:
+
+| Day | Event | Rows (newest → oldest) |
+| --- | --- | --- |
+| Jan 1 | Phone logs in | `phone` |
+| Jan 2–3 | Five private-window logins, all closed | `p5 p4 p3 p2 p1 phone` |
+| — | Prune keeps newest 5 | **`phone` evicted** |
+
+The phone is signed out by five sessions whose cookies no longer exist. (Pure
+private-window use is fine — only one session is ever live, and the rows pruned
+are already dead. The damage needs the *mix*.)
+
+Nothing was lost by removing it:
+
+- **Growth is already bounded** by the TTL index — the ceiling is distinct
+  logins within 30 days, not infinity.
+- **Rows are tiny**, so even a pathological month is trivial storage.
+- **No attack is prevented.** Rows are created only by *successful* logins, so
+  anyone generating them already holds the credentials. Brute force is F6's job;
+  failed attempts create nothing.
+- **The obvious repair costs more than the problem.** Evicting by `lastUsedAt`
+  rather than `createdAt` means a write on every refresh — the same cost that
+  got the access-token TTL reduction rejected (§9, item 9).
+
+> **When to revisit:** rotation (F4) makes each refresh *replace* a session's
+> row rather than add one, so an active session stays at one row, and refresh
+> becomes a write regardless. If bounded growth ever genuinely matters, that is
+> the moment to add `lastUsedAt` eviction — it would be free by then, and it
+> would evict the genuinely idle rather than the merely old.
+
+#### Signing out everywhere
+
+`POST /api/auth/logout-all` (Bearer) revokes **every** row for the caller,
+including their own, and clears the caller's cookie. Exposed on the client as
+`useAuth().logoutAll()`.
+
+Other devices are not notified. Each discovers it at its next refresh — within
+the access-token TTL at worst — and `RoleGuard` then redirects it to `/login`.
+
+Two properties worth being explicit about:
 
 1. **Revocation is not immediate.** For up to 15 minutes (the access-token TTL)
-   device A can still read *and mutate* data with a token that is conceptually
-   revoked. This is inherent to stateless access tokens — see
-   [§7.4](#74-architectural-assessment-is-the-split-token-model-earning-its-keep).
-2. **It is silent.** Device A is given no indication; it simply breaks later.
-
-This applies to two browsers on one machine, and to a normal + private window —
-each has its own cookie jar and so counts as a separate device.
-
-Related wrinkles:
-
-- Device A's dead cookie remains for 30 days. `middleware.ts` checks only cookie
-  *presence*, so A can navigate to `/dashboard`, pass the edge check, render the
-  shell, and only then be bounced by `RoleGuard`.
-- ✅ ~~**The Google route behaves differently** — it never imports
-  `RefreshToken`, so it neither clears existing sessions nor registers its own
-  (F1).~~ **Resolved.** Both flows now go through `issueSession()`, so Google
-  sign-in clears and registers allow-list rows exactly as the password flow
-  does — including the `deleteMany` that makes this section's single-session
-  behaviour apply to Google logins too.
+   a revoked device can still read *and mutate* data, because the access token
+   is stateless and never checked against the DB. This is inherent to the model
+   — see [§7.4](#74-architectural-assessment-is-the-split-token-model-earning-its-keep)
+   and **F21**, which remains open.
+2. **A revoked device's cookie lingers** for its full 30 days.
+   `middleware.ts` checks only cookie *presence*, so it can still navigate to
+   `/dashboard`, pass the edge check, render the shell, and only then be bounced
+   by `RoleGuard`. That is **F9**, still open.
 
 #### Logging out of one device
 
-Logout is **correctly scoped** — it removes only the `jti` carried in that
+Logout is **scoped to one device** — it removes only the `jti` carried in that
 browser's own cookie, and clears only that browser's cookie:
 
 ```ts
-await RefreshToken.deleteOne({ jti: payload.jti });
-cookieStore.delete("refreshToken");
+await revokeSession(payload.jti);   // deleteOne({ jti })
+await clearSessionCookie();
 ```
 
 | Action | Effect |
 | --- | --- |
-| Log out on the newest device (B) | Deletes `jti_B`, the only surviving row. A was already orphaned → everything signed out. |
-| Log out on the older, orphaned device (A) | `deleteOne({jti_A})` matches nothing (already gone); only A's cookie is cleared. **B is unaffected and stays signed in.** |
+| Log out on device B | Deletes `jti_B`. **A is unaffected and stays signed in.** |
+| Log out on device A | Deletes `jti_A`. **B is unaffected and stays signed in.** |
+| `logout-all` on either | Deletes both rows; every device signs out at its next refresh. |
 
-So logout never over-reaches. **The asymmetry is that login over-reaches and
-logout does not** — the opposite of what you would want.
+Login and logout are now **symmetric**: each touches exactly one session, and
+signing out of everything is an explicit action rather than a side effect of
+signing in. Before the F10 fix the asymmetry ran the wrong way — login
+over-reached and logout did not.
 
-Gaps this exposes: there is **no "sign out everywhere"** (with only one row
-possible, there is nothing to enumerate), and password change revokes nothing
-(F5). Also, `deleteMany` → `create` are two separate awaits with no transaction,
-so two simultaneous logins can interleave and briefly leave two rows, or have
-one clobber the other.
+#### What a password change does
+
+Changing the password calls `revokeAllSessions()` and then issues the caller a
+**fresh** session, so every other device is signed out while the person who
+made the change stays logged in (F5).
 
 ---
 
@@ -357,7 +419,7 @@ There are **three independent layers**, and they do not cover the same routes:
 | --- | --- | --- |
 | Edge middleware | `middleware.ts` | Only that a `refreshToken` cookie **exists** — no signature check. Matcher: `/dashboard/:path*`, `/login`, `/register`, `/profile/:path*`. |
 | Client `RoleGuard` | private layouts | `user` is loaded and `user.role` is allowed; redirects to `/login` or `/unauthorized`. |
-| **API routes** | every `app/api/**` handler | Verifies the JWT signature and loads the user. **This is the only real enforcement.** |
+| **API routes** | every `app/api/**` handler | `requireAuth()` / `requireAdmin()` — verifies the signature, loads the user, and rejects revoked sessions. **This is the only real enforcement.** |
 
 Routes such as `/editor`, `/links`, `/settings`, `/media` and `/admin/*` are
 **not** in the middleware matcher — they are gated only by `RoleGuard` on the
@@ -476,7 +538,7 @@ current environment the Google exchange fails before any of F1/F2 matters.
 | # | Finding | Why it matters |
 | --- | --- | --- |
 | **F4** | **No refresh-token rotation or reuse detection.** The same 30-day token is reused for its whole life. | A stolen refresh token is valid for 30 days and its use is indistinguishable from the legitimate user's. Rotation + reuse detection turns theft into a detectable event. |
-| **F5** | **Changing the password does not revoke sessions.** `change-password` never touches `RefreshToken`. | Defeats the main reason people change passwords. An attacker with a stolen refresh token keeps access. |
+| ✅ **F5** | ~~**Changing the password does not revoke sessions.**~~ **Fixed** — `change-password` now calls `revokeAllSessions()` and re-issues a fresh session to the caller. See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). | Defeats the main reason people change passwords. An attacker with a stolen refresh token keeps access. |
 | **F6** | **No rate limiting** on `login`, `register`, or `refresh`. | Credential stuffing and brute force are unimpeded. bcrypt cost 12 slows each attempt but is not a substitute. |
 | **F7** | **User enumeration.** `register` returns `409 "Email already in use"`; `login` runs bcrypt only when the user exists, so response timing differs measurably. | Lets an attacker build a list of valid accounts before attacking them. |
 | ✅ **F8** | ~~**`verifyAccessToken` casts instead of validating.**~~ **Fixed** — see [AUTH-FIX §1](./AUTH-FIX.md#1--f8--token-payload-shape-was-never-validated-at-runtime). | This is the *root cause* that let F1 ship silently. A runtime shape check would have failed loudly. |
@@ -487,7 +549,7 @@ current environment the Google exchange fails before any of F1/F2 matters.
 
 | # | Finding |
 | --- | --- |
-| **F10** | **Login wipes every other session** — `RefreshToken.deleteMany({ user })` before creating the new one. Signing in on a phone silently logs you out on your laptop. This may be intentional; if so it should be documented, and if not it should be `deleteOne` on the *old* jti. |
+| ✅ **F10** | ~~**Login wipes every other session** — `RefreshToken.deleteMany({ user })` before creating the new one. Signing in on a phone silently logs you out on your laptop.~~ **Fixed** — the `deleteMany` is gone; sessions are per-device and uncapped. See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). |
 | ✅ **F11** | ~~**Cookie settings differ between flows** — password: `sameSite: "lax"`, 30 days; Google: `sameSite: "strict"`, 7 days. Also the Google cookie uses `maxAge` while login uses `expires`.~~ **Fixed** as a consequence of F1 — a shared issuer cannot emit two sets of flags. Both are now `sameSite: "lax"`, 30 days, `expires`. See [AUTH-FIX §2](./AUTH-FIX.md#2--f1--google-oauth-issued-tokens-with-the-wrong-claim-shape). |
 | **F12** | **`/api/auth/change-password` has no caller in the UI** and doesn't handle Google-only accounts gracefully (they hit "Incorrect old password" because they have no password at all). |
 | **F13** | **`RoleGuard` logs the full user object to the console on every render** (`console.log("Role guard triggered…", user)`) — PII in the production browser console. |
@@ -495,10 +557,10 @@ current environment the Google exchange fails before any of F1/F2 matters.
 | **F15** | **Password policy is length ≥ 8 only.** `zxcvbn` is already a dependency (added for the vault) and could enforce real strength. |
 | **F16** | **`middleware.ts` is deprecated in Next 16** — logs a warning on every boot; should become `proxy.ts`. |
 | **F17** | **`/api/auth/me` returns the whole user document** (minus password), including `googleId`, `vaultSalt`, `vaultVerifier`. All safe by design, but broader than needed. |
-| **F18** | **Auth boilerplate is duplicated in ~15 route handlers** rather than shared in one helper — the kind of drift that produced F1. |
-| **F20** | **There is no "sign out of all devices".** Because `login`'s `deleteMany` guarantees at most one row per user, there is nothing to enumerate, so a global sign-out is not expressible today. See [§5.9](#59-session-lifecycle-across-devices). |
-| **F21** | **Revocation has an up-to-15-minute lag.** Revoking a session deletes the allow-list row, but the already-issued access token stays valid until it expires, since it is never checked against the DB. Inherent to stateless access tokens; mitigable by shortening the TTL. |
-| **F22** | **`deleteMany` → `create` in `login` is not atomic** (two separate awaits, no transaction). Two simultaneous logins can interleave and briefly leave two rows, or have one clobber the other. |
+| ✅ **F18** | ~~**Auth boilerplate is duplicated in ~15 route handlers**~~ **Fixed** — all 15 call sites now go through `requireAuth()` / `requireAdmin()` in [`lib/requireAuth.ts`](../lib/requireAuth.ts). `verifyAccessToken` has exactly one caller. See [AUTH-FIX §5](./AUTH-FIX.md#5--f18-f21--one-auth-helper-and-immediate-global-revocation). |
+| ✅ **F20** | ~~**There is no "sign out of all devices".**~~ **Fixed** — `POST /api/auth/logout-all`, exposed as `useAuth().logoutAll()`. Now expressible precisely because F10 made multiple rows possible. **No UI button is wired yet** (same gap as F12). See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). |
+| ✅ **F21** | ~~**Revocation has an up-to-15-minute lag.**~~ **Fixed for global revocation** — `User.sessionsRevokedAt` is stamped by `revokeAllSessions()` and enforced in `requireAuth()`, so "sign out everywhere" and password change take effect on the **next request**, not in 15 minutes. Costs no extra query: the user document was already being loaded. **Per-device logout still lags** — the access token carries no `jti`, so making that immediate would need a `RefreshToken` read per request. Accepted. See [AUTH-FIX §5](./AUTH-FIX.md#5--f18-f21--one-auth-helper-and-immediate-global-revocation). |
+| ✅ **F22** | ~~**`deleteMany` → `create` in `login` is not atomic**~~ **Dissolved by the F10 fix** — there is no delete-then-create sequence left. Two simultaneous logins are now *supposed* to leave two rows, and with no session cap there is nothing further to reconcile. See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). |
 | **F23** | **No "remember me" — and no way to opt out of being remembered.** `login` hardcodes `REFRESH_TOKEN_EXPIRATION_DAYS = 30` and always sets a *persistent* cookie, so every sign-in (including on a shared or public machine) persists for 30 days. **v1: cookie-only opt-out** (session cookie when unchecked); **server-enforced expiry deferred to v2.** See [§9.1](#91-designing-remember-me-under-option-a). |
 | **F24** | **Operational note, not a vulnerability — no signing-key rotation support.** `JWT_SECRET` / `JWT_REFRESH_SECRET` are single static values with no `kid` claim and no multi-key verification, so rotating either logs every user out at once. Only relevant for *mundane* rotation (e.g. someone with env access leaves). **Explicitly not a threat model:** secret compromise is not a scenario this design should be expected to mitigate — `MONGODB_URI` lives in the same `.env.local`, so anything that leaks the signing key also surrenders the database, and an attacker who owns the datastore can read everything and insert their own session rows regardless of architecture. Revocation is meaningless when the attacker controls the revocation table. (Minor asymmetry: Atlas is IP-allowlisted, so the DB URI carries a network-level second factor the signing key does not — but the correct response to a leaked key is still rotate-and-force-relogin.) |
 | **F25** | **The interceptor's `/api/auth/me` skip is implicitly coupled to a single call site.** It is correct only because `/me` is called exactly once, immediately after a successful refresh. Nothing documents or enforces that. Add a `/me` call anywhere else — a profile re-fetch, a settings reload — and past the 15-minute access-token window it will 401 and **fail hard instead of transparently recovering**, with a non-obvious cause. Since `_retry` already prevents loops, prefer narrowing the skip-list to `/refresh` + `/login` (dropping `/me` and the dead `/register` entry), or comment the assumption explicitly. Minor related wart: `_retry` is set *before* the skip-list check, so skipped requests are marked retried despite never being retried. |
@@ -517,8 +579,8 @@ advantages are actually realised.** Audited one by one:
 | --- | --- | --- | --- |
 | 1 | Short-lived access token limits the value of a leak | ✅ **Yes** | 15 minutes. Genuine. |
 | 2 | Long-lived credential is `httpOnly`, so XSS cannot steal it | ✅ **Yes** | The single most valuable property, and it is correctly implemented. |
-| 3 | Server-side revocation (which stateless JWT alone cannot do) | 🟡 **Partly** | The allow-list works, but revocation lags by up to the access-token TTL (F21), and only for the password flow (F1). |
-| 4 | Stateless auth — no DB round-trip per request | ❌ **No** | Nearly every protected route immediately calls `User.findById(payload.userId)`, so a DB hit happens anyway. The statelessness is paid for but not banked. |
+| 3 | Server-side revocation (which stateless JWT alone cannot do) | 🟡 **Partly → mostly** | The allow-list works for both flows now (F1), sessions are per-device and individually revocable, and "sign out everywhere" exists (F10/F20). The remaining gap is the up-to-15-minute lag (F21, open). |
+| 4 | Stateless auth — no DB round-trip per request | ❌ **No — now deliberately** | 12 of 16 route files already loaded the user, so the round-trip was being paid regardless. `requireAuth()` makes it uniform and *spends* it: the lookup that was pure cost now also enforces revocation (F21). Abandoning this advantage is a choice rather than an accident. |
 | 5 | Rotation + reuse detection turns token theft into a *detectable* event | ❌ **No** | No rotation at all (F4). This is the biggest security win of the model, entirely unrealised. |
 | 6 | Bearer tokens serve non-browser clients (mobile, CLI, third-party API) | ❌ **N/A** | There is one first-party web client on the same origin. Nothing consumes bearer tokens externally. |
 
@@ -667,16 +729,20 @@ These are deliberate, correct choices and should be preserved:
    `verifyAccessToken` return `null` unless `userId` is a non-empty string.~~
    Both verifiers now reject any payload whose claims are the wrong shape.
    See [AUTH-FIX §1](./AUTH-FIX.md#1--f8--token-payload-shape-was-never-validated-at-runtime).
-4. **Revoke sessions on password change (F5)** — `RefreshToken.deleteMany({ user })`
-   inside `change-password`, and clear the caller's cookie.
+4. ✅ **DONE — Revoke sessions on password change (F5)** — ~~`RefreshToken.deleteMany({ user })`
+   inside `change-password`, and clear the caller's cookie.~~ Implemented as
+   `revokeAllSessions()` followed by a fresh `issueSession()` for the caller,
+   rather than clearing their cookie — every other device dies, but the person
+   who changed the password is not signed out of the tab they did it in.
+   See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change).
 5. **Set `GOOGLE_CLIENT_SECRET` (F3)** or hide the Google buttons when it is absent.
-6. **Drop `deleteMany` from `login` (F10)** so sessions become genuinely
-   per-device — the `RefreshToken` schema already supports multiple rows per
-   user, so nothing else has to change. Then add an explicit
-   **"sign out of all devices"** action (F20) that performs the `deleteMany`,
-   and call it from `change-password` (F5). Consider a session cap (e.g. keep
-   the 5 most recent) rather than unbounded rows, and make the
-   delete-then-create atomic (F22).
+6. ✅ **DONE — Drop `deleteMany` from `login` (F10)** ~~so sessions become
+   genuinely per-device.~~ Done, together with the **"sign out of all devices"**
+   action (F20), the call from `change-password` (F5), and the suggested
+   The suggested **session cap was implemented and then deliberately removed** —
+   see [§5.9](#why-there-is-no-session-cap). The delete-then-create atomicity
+   worry (F22) dissolved rather than being fixed — removing the `deleteMany`
+   left no such sequence. See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change).
 
 ### Do next (hardening)
 
@@ -694,14 +760,20 @@ These are deliberate, correct choices and should be preserved:
    `rememberMe` on the row so rotation re-issues the cookie in the same mode
    instead of silently promoting a session cookie to persistent.
    Server-enforced expiry is **deferred to v2** — see [§9.1](#91-designing-remember-me-under-option-a).
-9. **Shorten the access-token TTL (F21)**, 15 min → ~5 min, to buy down the
-   revocation lag cheaply. The refresh flow already makes this transparent.
+9. ❌ **REJECTED — Shorten the access-token TTL (F21)**, ~~15 min → ~5 min, to
+   buy down the revocation lag cheaply.~~ **Deliberately not done.** It triples
+   refresh traffic, and once rotation (F4) makes every refresh a *write* rather
+   than two reads, that cost lands on the write path. In exchange it only moves
+   the lag from 15 minutes to 5 — it never makes revocation immediate. The
+   `sessionsRevokedAt` check shipped instead: **immediate** global revocation at
+   **zero** extra queries. The TTL stays at 15 minutes. See [AUTH-FIX §5](./AUTH-FIX.md#5--f18-f21--one-auth-helper-and-immediate-global-revocation).
 10. **Rate limiting (F6)** on `login`/`register`/`refresh` — per-IP and per-account.
 11. **Constant-time login (F7):** run a dummy bcrypt compare when the user is not
     found, and make `register` respond identically whether or not the email exists
     (send a "check your inbox" style response instead of `409`).
-12. **Extract one `requireAuth(req)` / `requireAdmin(req)` helper (F18)** and use
-    it in every route handler.
+12. ✅ **DONE — Extract one `requireAuth(req)` / `requireAdmin(req)` helper
+    (F18)** ~~and use it in every route handler.~~ Done; it is also where the
+    F21 revocation check lives. See [AUTH-FIX §5](./AUTH-FIX.md#5--f18-f21--one-auth-helper-and-immediate-global-revocation).
 13. **Widen the middleware matcher (F9)** to all private routes, or drop the
     middleware layer entirely and rely on `RoleGuard` + API enforcement — but
     pick one deliberately.
@@ -878,7 +950,7 @@ fix**; stage 1 shipped (see [AUTH-FIX §3](./AUTH-FIX.md#3--f2--google-account-l
 
 `register` accepts any email address without proving the registrant controls it.
 That is the root cause behind the second direction of
-[F2](#-f2--google-account-linking-does-not-check-email_verified--fixed): the
+[F2](#f2--google-account-linking-does-not-check-email_verified--fixed-stage-1-of-2): the
 local side of an email match is unproven, so Google's verified claim is not
 enough on its own to make auto-linking safe.
 
@@ -928,10 +1000,11 @@ Not a small change, which is why it is not part of the F2 fix:
 | `POST /api/auth/register` | — | `{username, email, password}` | `201 {message}` | `400` missing/short password · `409` email taken |
 | `POST /api/auth/login` | — | `{email, password}` | `200 {user, accessToken}` + cookie | `400` missing · `401` bad credentials |
 | `POST /api/auth/refresh` | cookie | — | `200 {accessToken}` | `401` absent/invalid/revoked/expired · `404` user gone |
-| `POST /api/auth/logout` | cookie (optional) | — | `200 {message}` | always clears the cookie |
+| `POST /api/auth/logout` | cookie (optional) | — | `200 {message}` | always clears the cookie; revokes only this device's session |
+| `POST /api/auth/logout-all` | Bearer | — | `200 {success, revoked}` | `401` no/invalid token — revokes every session for the user |
 | `GET /api/auth/me` | Bearer | — | `200 <user minus password>` | `401` · `404` |
 | `POST /api/auth/google` | — | `{code}` | `200 {accessToken, user}` + cookie | `400` no code/payload · `403` `GOOGLE_EMAIL_UNVERIFIED` · `409` `PASSWORD_ACCOUNT_EXISTS` · `500` exchange failed |
-| `POST /api/auth/change-password` | Bearer | `{oldPassword, newPassword}` | `200 {success}` | `400` short · `401` bad old password · `404` |
+| `POST /api/auth/change-password` | Bearer | `{oldPassword, newPassword}` | `200 {success, accessToken, revokedSessions}` + new cookie | `400` short · `401` bad old password · `404` |
 
 ### Environment variables
 

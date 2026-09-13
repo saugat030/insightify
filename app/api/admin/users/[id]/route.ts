@@ -1,39 +1,15 @@
 import { NextResponse } from "next/server";
-import { verifyAccessToken } from "@/lib/auth";
+import { requireAdmin } from "@/lib/requireAuth";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
-
-// Helper for admin check to avoid repetition (though good to be explicit in each file for Next.js app router independence)
-async function checkAdmin(req: Request) {
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return { error: "Unauthorized", status: 401 };
-  }
-
-  const token = authHeader.split(" ")[1];
-  const payload = verifyAccessToken(token);
-
-  if (!payload) {
-    return { error: "Invalid token", status: 401 };
-  }
-
-  await connectToDb();
-  const user = await User.findById(payload.userId);
-  if (!user || user.role !== "admin") {
-    return { error: "Forbidden", status: 403 };
-  }
-  return { user };
-}
 
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await checkAdmin(req);
-    if (auth.error) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status });
-    }
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
 
     const { id } = await params;
     //no need to unselect password by select(-password), model already handles that.
@@ -58,10 +34,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await checkAdmin(req);
-    if (auth.error) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status });
-    }
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
 
     const { id } = await params;
     const body = await req.json();
@@ -111,10 +85,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await checkAdmin(req);
-    if (auth.error) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status });
-    }
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
 
     const { id } = await params;
 
@@ -152,10 +124,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const auth = await checkAdmin(req);
-    if (auth.error) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status });
-    }
+    const auth = await requireAdmin(req);
+    if (!auth.ok) return auth.response;
 
     const { id } = await params;
     const body = await req.json();

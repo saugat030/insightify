@@ -1,29 +1,17 @@
 import { NextResponse, NextRequest } from "next/server";
 import connectToDb from "@/lib/db";
 import Link from "@/models/Link";
-import { verifyAccessToken, AccessTokenPayload } from "@/lib/auth";
+import { requireAuth } from "@/lib/requireAuth";
 import { scrapeUrl, ScrapeError } from "@/lib/scraper";
 import { getAiAnalysis } from "@/lib/gemini";
 import User from "@/models/User";
 
 export async function GET(req: NextRequest) {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await requireAuth(req);
+    if (!auth.ok) return auth.response;
 
-    const token = authHeader.split(" ")[1];
-    const payload: AccessTokenPayload | null = verifyAccessToken(token);
-
-    if (!payload) {
-      return NextResponse.json(
-        { error: "Invalid or expired token" },
-        { status: 401 },
-      );
-    }
-    await connectToDb();
-    const links = await Link.find({ user: payload.userId }).sort({
+    const links = await Link.find({ user: auth.userId }).sort({
       createdAt: -1,
     });
 
@@ -39,27 +27,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const token = authHeader.split(" ")[1];
-    const payload: AccessTokenPayload | null = verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json(
-        { error: "Invalid or expired token" },
-        { status: 401 },
-      );
-    }
-    await connectToDb();
-    const user = await User.findById(payload.userId);
+    const auth = await requireAuth(req);
+    if (!auth.ok) return auth.response;
+    const { user } = auth;
 
-    if (!user) {
-      return NextResponse.json(
-        { error: "User not found in db" },
-        { status: 404 },
-      );
-    }
     if (!user.canCreateLink()) {
       return NextResponse.json(
         {
@@ -79,7 +50,7 @@ export async function POST(req: NextRequest) {
     const { summary, tags, extraInfo } = await getAiAnalysis(textContent, category || "Other", keyword || "");
 
     const newLink = await Link.create({
-      user: payload.userId,
+      user: auth.userId,
       url,
       title,
       imageUrl,

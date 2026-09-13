@@ -42,6 +42,12 @@ const UserSchema = new Schema({
     type: Boolean,
     default: false,
   },
+  // Access tokens issued before this instant are rejected. See docs/AUTH-FIX.md §5.
+  sessionsRevokedAt: {
+    type: Date,
+    required: false,
+    default: null,
+  },
   // 1. CHANGED: Password is no longer strictly required for Google users
   password: {
     type: String,

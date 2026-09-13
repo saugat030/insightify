@@ -4,7 +4,7 @@ import connectToDb from "@/lib/db";
 import Link from "@/models/Link";
 import MarkdownDoc from "@/models/MarkdownDoc";
 import User from "@/models/User";
-import { verifyAccessToken, AccessTokenPayload } from "@/lib/auth";
+import { requireAuth } from "@/lib/requireAuth";
 import {
   DAY_MS,
   WEEK_MS,
@@ -23,31 +23,14 @@ import {
 // Note on encrypted documents: we can count them and read their timestamps,
 // but never their contents — the server only holds ciphertext.
 
-function authUserId(req: NextRequest): string | null {
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
-  const token = authHeader.split(" ")[1];
-  const payload: AccessTokenPayload | null = verifyAccessToken(token);
-  return payload?.userId ?? null;
-}
-
 export async function GET(req: NextRequest) {
   try {
-    const userIdStr = authUserId(req);
-    if (!userIdStr) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    await connectToDb();
+    const auth = await requireAuth(req);
+    if (!auth.ok) return auth.response;
+    const { user } = auth;
 
-    const userId = new mongoose.Types.ObjectId(userIdStr);
+    const userId = new mongoose.Types.ObjectId(auth.userId);
     const since = new Date(Date.now() - (TREND_DAYS - 1) * DAY_MS);
-
-    const user = await User.findById(userId).select(
-      "username email tier vaultEnabled linksCreatedCount lastResetDate createdAt",
-    );
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
 
     const [
       totalLinks,

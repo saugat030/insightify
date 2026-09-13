@@ -1,7 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import connectToDb from "@/lib/db";
-import User from "@/models/User";
-import { verifyAccessToken, AccessTokenPayload } from "@/lib/auth";
+import { requireAuth } from "@/lib/requireAuth";
 
 // Encrypted Secrets Vault — server side.
 //
@@ -10,30 +8,13 @@ import { verifyAccessToken, AccessTokenPayload } from "@/lib/auth";
 // never receives the passphrase or derived key. All of that stays in the browser
 // (see lib/vault/crypto.ts and hooks/useVault.tsx).
 
-function authUserId(req: NextRequest): string | null {
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
-  const token = authHeader.split(" ")[1];
-  const payload: AccessTokenPayload | null = verifyAccessToken(token);
-  return payload?.userId ?? null;
-}
-
 // GET — return the current user's vault status and the public material the
 // browser needs to derive and self-verify the key.
 export async function GET(req: NextRequest) {
   try {
-    const userId = authUserId(req);
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    await connectToDb();
-
-    const user = await User.findById(userId).select(
-      "vaultEnabled vaultSalt vaultKdf vaultVerifier",
-    );
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const auth = await requireAuth(req);
+    if (!auth.ok) return auth.response;
+    const { user } = auth;
 
     return NextResponse.json(
       {
@@ -59,18 +40,9 @@ export async function GET(req: NextRequest) {
 // encrypted entries).
 export async function POST(req: NextRequest) {
   try {
-    const userId = authUserId(req);
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    await connectToDb();
-
-    const user = await User.findById(userId).select(
-      "vaultEnabled vaultSalt vaultKdf vaultVerifier",
-    );
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    const auth = await requireAuth(req);
+    if (!auth.ok) return auth.response;
+    const { user } = auth;
     if (user.vaultEnabled) {
       return NextResponse.json(
         { error: "Vault is already set up." },

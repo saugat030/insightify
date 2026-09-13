@@ -1,22 +1,13 @@
 import { NextResponse, NextRequest } from "next/server";
 import connectToDb from "@/lib/db";
 import MarkdownDoc from "@/models/MarkdownDoc";
-import { verifyAccessToken, AccessTokenPayload } from "@/lib/auth";
+import { requireAuth } from "@/lib/requireAuth";
 
 export async function GET(req: NextRequest) {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      console.log("Unauthorized access");
-      return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
-    }
-    const token = authHeader.split(" ")[1];
-    const payload: AccessTokenPayload | null = verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
-    }
-    await connectToDb();
-    const docs = await MarkdownDoc.find({ user: payload.userId }).sort({ updatedAt: -1 });
+    const auth = await requireAuth(req);
+    if (!auth.ok) return auth.response;
+    const docs = await MarkdownDoc.find({ user: auth.userId }).sort({ updatedAt: -1 });
     return NextResponse.json(docs, { status: 200 });
   } catch (error) {
     console.error("[MARKDOWN_GET_ERROR]", error);
@@ -26,21 +17,13 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const token = authHeader.split(" ")[1];
-    const payload: AccessTokenPayload | null = verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
-    }
-    await connectToDb();
+    const auth = await requireAuth(req);
+    if (!auth.ok) return auth.response;
     
     const { title, content, encrypted, nonce } = await req.json();
 
     const newDoc = await MarkdownDoc.create({
-      user: payload.userId,
+      user: auth.userId,
       title: title || "markdown-1",
       content: content || "",
       // For encrypted docs `content` is ciphertext and `nonce` its base64 nonce.
@@ -57,16 +40,8 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const token = authHeader.split(" ")[1];
-    const payload: AccessTokenPayload | null = verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
-    }
-    await connectToDb();
+    const auth = await requireAuth(req);
+    if (!auth.ok) return auth.response;
     
     const { id, title, content, encrypted, nonce } = await req.json();
 
@@ -88,7 +63,7 @@ export async function PUT(req: NextRequest) {
     }
 
     const updatedDoc = await MarkdownDoc.findOneAndUpdate(
-      { _id: id, user: payload.userId },
+      { _id: id, user: auth.userId },
       update,
       { new: true }
     );
@@ -106,16 +81,8 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const token = authHeader.split(" ")[1];
-    const payload: AccessTokenPayload | null = verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
-    }
-    await connectToDb();
+    const auth = await requireAuth(req);
+    if (!auth.ok) return auth.response;
     
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
@@ -124,7 +91,7 @@ export async function DELETE(req: NextRequest) {
        return NextResponse.json({ error: "ID is required" }, { status: 400 });
     }
 
-    const deletedDoc = await MarkdownDoc.findOneAndDelete({ _id: id, user: payload.userId });
+    const deletedDoc = await MarkdownDoc.findOneAndDelete({ _id: id, user: auth.userId });
 
     if (!deletedDoc) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });

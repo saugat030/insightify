@@ -2,10 +2,12 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import connectToDb from "@/lib/db";
-import RefreshToken from "@/models/RefreshToken";
 import { verifyRefreshToken } from "@/lib/auth";
-
-const REFRESH_TOKEN_COOKIE_NAME = "refreshToken";
+import {
+  REFRESH_TOKEN_COOKIE_NAME,
+  revokeSession,
+  clearSessionCookie,
+} from "@/lib/session";
 
 export async function POST() {
   try {
@@ -19,10 +21,10 @@ export async function POST() {
       try {
         const payload = verifyRefreshToken(refreshTokenString);
 
-        // 2. If the token is valid, revoke it from the database
+        // 2. If the token is valid, revoke just this device's session
         if (payload) {
           await connectToDb();
-          await RefreshToken.deleteOne({ jti: payload.jti });
+          await revokeSession(payload.jti);
         }
       } catch (verifyError) {
         // Token verification failed, but we still want to clear the cookie
@@ -31,7 +33,7 @@ export async function POST() {
     }
 
     // 3. Delete the cookie using Next.js 15 cookies API
-    cookieStore.delete(REFRESH_TOKEN_COOKIE_NAME);
+    await clearSessionCookie();
 
     // 4. Return success
     return NextResponse.json(

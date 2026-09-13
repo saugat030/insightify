@@ -1,34 +1,13 @@
-import { AccessTokenPayload, verifyAccessToken } from "@/lib/auth";
-import connectToDb from "@/lib/db";
-import User from "@/models/User";
+import { requireAuth } from "@/lib/requireAuth";
+import { issueSession, revokeAllSessions } from "@/lib/session";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 },
-      );
-    }
-    const token = authHeader.split(" ")[1];
-    const payload: AccessTokenPayload | null = verifyAccessToken(token);
-    if (!payload) {
-      return NextResponse.json(
-        { success: false, error: "Invalid or expired token" },
-        { status: 401 },
-      );
-    }
-    await connectToDb();
-    // we need to explicitly select the password because it's set to select: false in the schema
-    const user = await User.findById(payload.userId).select("+password");
-    if (!user) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 },
-      );
-    }
+    // withPassword because the field is select:false on the schema
+    const auth = await requireAuth(req, { withPassword: true });
+    if (!auth.ok) return auth.response;
+    const { user } = auth;
     const { oldPassword, newPassword } = await req.json();
     if (!oldPassword || !newPassword) {
       return NextResponse.json(
@@ -58,8 +37,19 @@ export async function POST(req: NextRequest) {
     // update password (pre-save hook will hash it)
     user.password = newPassword;
     await user.save();
+
+    // A password change must not leave sessions opened under the old one alive.
+    const revoked = await revokeAllSessions(user._id);
+    // The caller keeps working: they get a brand-new session straight away.
+    const accessToken = await issueSession(user);
+
     return NextResponse.json(
-      { success: true, message: "Password updated successfully" },
+      {
+        success: true,
+        message: "Password updated successfully",
+        accessToken,
+        revokedSessions: revoked,
+      },
       { status: 200 },
     );
   } catch (error) {

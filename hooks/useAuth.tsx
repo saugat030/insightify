@@ -32,6 +32,7 @@ interface AuthContextType {
   ) => Promise<void>;
   googleLogin: (code: string) => Promise<User>;
   logout: () => Promise<void>;
+  logoutAll: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -145,7 +146,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       updateAccessToken(null);
       router.push("/login");
     }
-  }, [updateAccessToken]);
+  }, [updateAccessToken, router]);
+
+  // Revokes every session for this user, on every device, not just this one.
+  const logoutAll = useCallback(async () => {
+    try {
+      await axiosInstance.post("/api/auth/logout-all");
+    } catch (error) {
+      console.error("Sign out of all devices failed on server:", error);
+    } finally {
+      setUser(null);
+      updateAccessToken(null);
+      router.push("/login");
+    }
+  }, [updateAccessToken, router]);
 
   const googleLogin = useCallback(
     async (code: string) => {
@@ -171,6 +185,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     register,
     googleLogin,
     logout,
+    logoutAll,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
