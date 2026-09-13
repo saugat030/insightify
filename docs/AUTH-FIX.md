@@ -745,15 +745,21 @@ user's email and username are passed as `userInputs`, so passwords built from
 their own details score low. Loaded lazily; registration is rare enough to
 absorb the first dictionary load.
 
-> **Caught while testing:** zxcvbn's `feedback.warning` / `suggestions` are i18n
-> **keys**, not English, unless `@zxcvbn-ts/language-en` is installed — which it
-> is not. Surfacing them raw showed users *"Password is too weak. topTen"*. The
-> module now uses only the numeric score and writes its own message.
+> **Caught while testing:** zxcvbn's `feedback.warning` / `suggestions` come
+> back as i18n **keys**, not English, unless `@zxcvbn-ts/language-en` is
+> installed — and it was not. Surfacing them raw showed users
+> *"Password is too weak. topTen"*.
 >
-> **The same latent bug exists in [`lib/vault/strength.ts`](../lib/vault/strength.ts)**,
-> which returns `r.feedback.warning` to the vault UI. Not fixed here — it is
-> vault code, outside this pass — but it should be, either by installing
-> `@zxcvbn-ts/language-en` or by dropping the raw strings.
+> **The same bug was live in [`lib/vault/strength.ts`](../lib/vault/strength.ts)**,
+> whose `warning` is rendered straight under the vault strength meter — so
+> typing `password` there displayed *"Very weak — topTen"*.
+>
+> **Both fixed** by installing `@zxcvbn-ts/language-en` and passing its
+> `translations` (and merging its `dictionary`) into both `ZxcvbnFactory`
+> instances. It is lazily imported alongside `language-common`, so there is no
+> added bundle cost until a passphrase is actually scored. The vault meter now
+> reads *"This is a heavily used password."*, and registration errors carry the
+> specific warning plus zxcvbn's first suggestion.
 
 ### F14 · Username uniqueness
 
@@ -843,6 +849,7 @@ their refresh-token rows; the two real accounts were untouched.
 | # | Behaviour | Result |
 | --- | --- | --- |
 | F15 | Weak password at registration | `400`, readable message |
+| F15 | Feedback text (after the `language-en` fix) | `"This is a heavily used password. Add more words that are less common."` |
 | F15 | Strong password | `201` |
 | F14 | Duplicate username, different email | `409 Username already taken` |
 | F7 | Login timing: missing vs wrong-password | 0.300–0.309s vs 0.303–0.315s — indistinguishable |

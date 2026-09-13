@@ -19,13 +19,17 @@ let checkerPromise: Promise<(pw: string) => StrengthResult> | null = null;
 async function getChecker() {
   if (!checkerPromise) {
     checkerPromise = (async () => {
-      const [core, common] = await Promise.all([
+      // language-en supplies the translations; without it feedback comes back
+      // as i18n keys ("topTen") and the UI shows those to the user.
+      const [core, common, en] = await Promise.all([
         import("@zxcvbn-ts/core"),
         import("@zxcvbn-ts/language-common"),
+        import("@zxcvbn-ts/language-en"),
       ]);
       const factory = new core.ZxcvbnFactory({
-        dictionary: { ...common.dictionary },
+        dictionary: { ...common.dictionary, ...en.dictionary },
         graphs: common.adjacencyGraphs,
+        translations: en.translations,
       });
       return (pw: string): StrengthResult => {
         const r = factory.check(pw);
