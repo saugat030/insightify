@@ -21,6 +21,16 @@ is easy to tell apart from closed work at a glance.
 | 5 | **F18** | Auth boilerplate duplicated across ~15 route handlers | ✅ Fixed |
 | 5 | **F21** | Revocation lagged up to 15 minutes | ✅ Fixed for global revocation |
 | 6 | **F4** | No refresh-token rotation or reuse detection | ✅ Fixed |
+| 7 | **F7** | User enumeration via login timing | ✅ Fixed (login half; register half is v2) |
+| 7 | **F9** | Middleware covered only 4 route patterns | ✅ Fixed |
+| 7 | **F12** | change-password mishandled Google-only accounts | ✅ Fixed (server half; UI still absent) |
+| 7 | **F13** | RoleGuard logged the user object to the console | ✅ Fixed |
+| 7 | **F14** | Registration did not enforce username uniqueness | ✅ Fixed |
+| 7 | **F15** | Password policy was length ≥ 8 only | ✅ Fixed |
+| 7 | **F16** | `middleware.ts` deprecated in Next 16 | ✅ Fixed |
+| 7 | **F17** | `/api/auth/me` returned the whole user document | ✅ Fixed |
+| 7 | **F19** | Split-token model unfinished | ✅ Discharged |
+| 7 | **F25** | Axios skip-list coupled to a single call site | ✅ Fixed |
 
 ---
 
@@ -398,11 +408,10 @@ which a user ends up with no session.
 registered. Prune query checked against the real model — filter, `sort
 {createdAt: -1}`, `skip 5`, and `createdAt` confirmed present on the schema.
 
-**Not exercised against a live database.** Row-level behaviour — that pruning
-keeps exactly the newest five, that `revokeAllSessions` returns the right count,
-that a second device genuinely survives a first device's login — is reasoned
-from the code, not observed. These are worth a manual pass once the app is
-running against a real database.
+**Verified live** — see [§8](#8--live-verification-against-a-running-server). A second device genuinely survives a first
+device's login, `revokeAllSessions` reported the right count (`revoked: 7`), and
+password change cut the other device while keeping the caller signed in. (The
+pruning claim is moot — the cap was removed, see the revision note above.)
 
 ### Blast radius
 
@@ -511,10 +520,10 @@ The staleness rule was tested directly across its edge cases:
 | No `iat`, sessions revoked | **yes** — fail closed |
 | No `iat`, never revoked | no |
 
-**Not exercised against a live database.** The refactor's behaviour is
-structural and type-checked, but that all 10 routes still behave identically
-under real requests has not been observed. Given this touched every protected
-endpoint, it is the change in this series most worth a manual smoke test.
+**Verified live** — see [§8](#8--live-verification-against-a-running-server). `requireAuth` and `requireAdmin` were exercised
+over HTTP: a non-admin token gets `403 Forbidden: Admin access required`, and an
+access token is rejected with `401 Unauthorized: Session revoked` the instant
+`logout-all` runs — while still holding ~14 minutes of nominal validity.
 
 ### Blast radius
 
@@ -659,12 +668,10 @@ tested rather than a re-implementation:
 `revokeFamily()` was separately confirmed to short-circuit on `undefined`,
 `null`, `""`, `0` and `{}` without issuing a query.
 
-**Not exercised against a live database.** The classifier is genuinely tested,
-but the surrounding I/O is not: that the compare-and-set actually serialises two
-concurrent writers, that the new row is created with the right family, and that
-`deleteMany({ family })` removes the expected lineage are all reasoned from the
-code. **This is the change most in need of a real smoke test** — specifically
-two tabs refreshing at once, which must not log the user out.
+**Verified live** — see [§8](#8--live-verification-against-a-running-server). Rotation, the grace window, concurrent
+refreshes from two "tabs", and family revocation on replay were all exercised
+against a running server and a real database. The two-tab case, which was the
+main worry, logs nobody out.
 
 ### Blast radius
 
@@ -680,3 +687,199 @@ A consequence worth stating plainly: **a refresh token is now single-use.** Any
 client that replayed one — a stale service worker, a restored tab, a copied
 cookie — will now trip the grace window and, past 60 seconds, be treated as
 theft.
+
+---
+
+## 7 — Cleanup pass · F7, F9, F12, F13, F14, F15, F16, F17, F19, F25
+
+The remaining minor findings, taken in one pass. **F6 (rate limiting) was
+explicitly excluded** — it has its own layers and is being handled separately.
+
+### F13 · PII in the browser console
+
+`RoleGuard` logged the full user object on **every render** and twice more
+inside its effect; `useAuth.login` logged it again. All four removed, along with
+`proxy.ts`'s per-request `"Middleware hit"`.
+
+### F16 + F9 · `proxy.ts`, and a matcher that covers every private route
+
+`middleware.ts` → `proxy.ts` for Next 16, with the export renamed to `proxy`.
+The build now reports `ƒ Proxy (Middleware)` with no deprecation warning.
+
+The matcher previously covered four patterns, so `/editor`, `/links`,
+`/settings`, `/media`, `/products` and `/admin/*` painted their shell before
+`RoleGuard` bounced the visitor. It now lists every private route. Two pieces of
+dead code went with it: `publicRoutes = ["/", "/about"]` (neither path was in
+the matcher, so the branch never ran, and there is no `/about` page) and
+`/profile/:path*` (no such page exists).
+
+The file's comment now states plainly what this layer is: a **cookie-presence
+UX guard**, not enforcement. Enforcement is `lib/requireAuth.ts`.
+
+### F7 · Login timing (half of it)
+
+`login` only reached bcrypt when the user existed, so response time distinguished
+real accounts from fake ones. It now always runs exactly one compare, against a
+cost-12 dummy hash when the account is missing:
+
+```ts
+const matches = await bcrypt.compare(password, user?.password || DUMMY_HASH);
+if (!user || !user.password || !matches) -> 401
+```
+
+The `!user.password` arm matters: a Google-only account has no password, so the
+old `comparePassword()` returned `false` without hashing — leaking which accounts
+are Google-only. Measured: dummy 261ms vs real 248ms, a ratio of 1.05.
+
+**The register half is deferred.** Making `register` respond identically whether
+or not the email exists requires the signal to move to the inbox — i.e. the v2
+OTP flow ([AUTHENTICATION §9.2](./AUTHENTICATION.md#92-email-verification-otp--v2)).
+Until then `409` still distinguishes taken addresses.
+
+### F15 · Real password strength
+
+New [`lib/passwordStrength.ts`](../lib/passwordStrength.ts) gates `register` and
+`change-password` at **zxcvbn score ≥ 3** ("safely unguessable"), matching the
+vault's threshold — justified because this app has no password reset either. The
+user's email and username are passed as `userInputs`, so passwords built from
+their own details score low. Loaded lazily; registration is rare enough to
+absorb the first dictionary load.
+
+> **Caught while testing:** zxcvbn's `feedback.warning` / `suggestions` are i18n
+> **keys**, not English, unless `@zxcvbn-ts/language-en` is installed — which it
+> is not. Surfacing them raw showed users *"Password is too weak. topTen"*. The
+> module now uses only the numeric score and writes its own message.
+>
+> **The same latent bug exists in [`lib/vault/strength.ts`](../lib/vault/strength.ts)**,
+> which returns `r.feedback.warning` to the vault UI. Not fixed here — it is
+> vault code, outside this pass — but it should be, either by installing
+> `@zxcvbn-ts/language-en` or by dropping the raw strings.
+
+### F14 · Username uniqueness
+
+`register` checked only the email while the admin create-user path checked
+`$or: [{email}, {username}]`. Registration now applies the same rule and says
+which field collided.
+
+Enforcement is a **query, not a unique index** — deliberately. Adding a unique
+index to a collection that may already hold duplicates fails at build time and
+silently leaves the collection unindexed. Once the data is known clean, an index
+is the only race-free guarantee.
+
+### F12 · Google-only accounts (server half)
+
+`change-password` ran `comparePassword()` on accounts with no password, which
+returns `false`, so a Google-only user was told *"Incorrect old password"* — a
+misleading answer to a question they cannot satisfy. It now returns
+`400 NO_PASSWORD_SET` with an explanation.
+
+**No UI caller yet.** The settings page is still an "Under Construction"
+placeholder, so building one is a feature rather than a cleanup — see the
+"deliberately left" note below.
+
+### F17 · `/api/auth/me` trimmed
+
+It returned the whole document minus the password, including `vaultSalt`,
+`vaultKdf` and `vaultVerifier` — safe by design, but broader than needed, and it
+now also carried `sessionsRevokedAt`. It returns an explicit projection of the
+ten fields the client actually reads, plus `emailVerified` for the v2 OTP
+banner. The vault fields were never sourced from here: `useVault` fetches
+`/api/vault`, and the dashboard's `vaultEnabled` comes from `/api/analytics`.
+
+### F25 · Axios skip-list narrowed
+
+The list skipped `/me`, `/login`, `/register` and `/refresh`. `/register` was
+dead (that route never returns 401), and `/me` was correct only because it had
+exactly one call site immediately after a refresh — a second caller would have
+failed hard instead of recovering. Now only `/login` and `/refresh` are skipped;
+`_retry` alone prevents loops.
+
+Also fixed the related wart: `_retry` was set *before* the skip check, so
+skipped requests were marked retried despite never being retried. It is now set
+only on the path that actually retries.
+
+### F19 · Discharged
+
+F19 had no action of its own — it was the framing for F1, F4, F5, F10 and F21,
+and is discharged now that all five have landed. §7.4's scorecard went from
+**2 clear / 1 partial / 3 unrealised** to **4 clear / 1 partial / 1 N/A**.
+
+### Verification
+
+`npx tsc --noEmit` clean; `npx next build` compiles with `ƒ Proxy (Middleware)`
+registered and no deprecation warning. Strength gate and dummy-hash timing were
+exercised directly (results above).
+
+**Verified live** — see [§8](#8--live-verification-against-a-running-server). All seven private routes redirect at the edge,
+the trimmed `/me` returns exactly the intended projection, the strength gate and
+uniqueness check reject over HTTP, and login timing is indistinguishable across
+missing, wrong-password and Google-only accounts.
+
+### Deliberately left
+
+| Finding | Why |
+| --- | --- |
+| **F6** rate limiting | Excluded by request — handled separately. |
+| **F7** register half | Needs the v2 OTP flow to move the signal to the inbox. |
+| **F12** UI caller | The settings page is a placeholder; building it is a feature. `useAuth().logoutAll()` has no button for the same reason. |
+| **F23** remember me | v2, by decision. |
+| **F24** key rotation | Operational note, not scheduled. |
+
+---
+
+## 8 — Live verification against a running server
+
+Everything above was originally checked with `tsc`, `next build` and unit tests
+of the pure functions, with each entry noting what had *not* been exercised. It
+has since been run for real: `next dev` against the development database,
+driven over HTTP with a cookie jar, with `usedAt` back-dated directly in Mongo
+to cross the 60-second grace boundary on demand.
+
+Two throwaway accounts were created and **both deleted afterwards**, along with
+their refresh-token rows; the two real accounts were untouched.
+
+### Results
+
+| # | Behaviour | Result |
+| --- | --- | --- |
+| F15 | Weak password at registration | `400`, readable message |
+| F15 | Strong password | `201` |
+| F14 | Duplicate username, different email | `409 Username already taken` |
+| F7 | Login timing: missing vs wrong-password | 0.300–0.309s vs 0.303–0.315s — indistinguishable |
+| F7 | Login timing: Google-only account | 0.292–0.303s — no leak |
+| F10 | Device A after device B logs in | **still works** (pre-fix: 401) |
+| F4 | Rotation | `T1 ≠ T2 ≠ T3` — a new token every refresh |
+| F4 | Row shape | 3 families for 3 logins; chain `7813cf86 → cddba8fb → 3f41bf0b` via `replacedBy`; cap `2026-10-13` copied forward unchanged |
+| F4 | Replay inside grace | `200`, **no** `Set-Cookie` — no rotation |
+| F4 | **Two simultaneous refreshes** | both `200`, **neither tab logged out** |
+| F4 | Replay consumed 10 min ago | `401` + **entire family deleted (3 rows)**, other two families untouched |
+| F4 | Server log on detection | `[AUTH_REFRESH] Refresh-token reuse detected; revoked session family. { revoked: 3 }` |
+| F18 | Admin route, non-admin token | `403 Forbidden: Admin access required` |
+| F21 | Access token after `logout-all` | `401 Unauthorized: Session revoked` — **instantly**, with ~14 min of validity left |
+| F5 | Password change, other device | access token `401`, refresh cookie `401` |
+| F5 | Password change, the caller | new access token `200`, refresh cookie `200` — **stays signed in** |
+| F12 | change-password on a Google-only account | `400 NO_PASSWORD_SET` |
+| F17 | `/api/auth/me` | exactly the 11 intended fields; no vault material, no `sessionsRevokedAt` |
+| F9 | `/dashboard /editor /links /settings /media /products /admin/users` | all `307 → /login?from=…` |
+
+### What this confirmed that unit tests could not
+
+- **The multi-tab race is genuinely handled.** Two concurrent refreshes with the
+  same token both returned `200`. This was the single highest risk in F4 and the
+  one thing that would have surfaced as random logouts in production.
+- **Family scoping is real.** Replaying a retired token destroyed all three rows
+  of *that* lineage and left the other two families intact — theft on one device
+  does not sign the user out everywhere.
+- **F21 is genuinely immediate.** The same access token went from `200` to `401`
+  across a single `logout-all` call.
+- **The `iat` second-precision fix works in the wild.** `change-password`
+  revokes and re-issues within the same second, and the caller kept working
+  while the other device was cut — the exact edge case that would have broken a
+  naive millisecond comparison.
+
+### Still not verifiable here
+
+**F2 / F1 on the Google path.** `GOOGLE_CLIENT_SECRET` is unset, so
+`getToken(code)` fails before any of the reviewed code runs. The `403`
+unverified-email refusal and the `409 PASSWORD_ACCOUNT_EXISTS` linking refusal
+remain unexercised. Worth running once the secret exists.

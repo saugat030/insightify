@@ -1,5 +1,6 @@
 import { requireAuth } from "@/lib/requireAuth";
 import { issueSession, revokeAllSessions } from "@/lib/session";
+import { checkPasswordStrength } from "@/lib/passwordStrength";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
@@ -22,6 +23,28 @@ export async function POST(req: NextRequest) {
           success: false,
           error: "New password must be at least 8 characters long",
         },
+        { status: 400 },
+      );
+    }
+
+    // Google-only accounts have no password, so "incorrect old password" would
+    // be misleading — they have nothing to change yet.
+    if (!user.password) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "This account signs in with Google and has no password to change.",
+          code: "NO_PASSWORD_SET",
+        },
+        { status: 400 },
+      );
+    }
+
+    const strength = await checkPasswordStrength(newPassword, [user.email, user.username]);
+    if (!strength.ok) {
+      return NextResponse.json(
+        { success: false, error: strength.error },
         { status: 400 },
       );
     }

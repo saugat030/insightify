@@ -74,18 +74,17 @@ axiosInstance.interceptors.response.use(
 
     // Check if error is 401 and we haven't retried yet
     if (error.response?.status === 401 && !originalRequest._retry) {
-      // Prevent infinite retry loops
-      originalRequest._retry = true;
-
-      // Skip refresh for auth endpoints to prevent infinite loops
+      // /refresh 401s are an anonymous visitor's normal first load; /login 401s
+      // mean bad credentials. Refreshing either is meaningless. Everything else
+      // retries once — _retry alone prevents loops.
       if (
-        originalRequest.url?.includes("/api/auth/me") ||
         originalRequest.url?.includes("/api/auth/login") ||
-        originalRequest.url?.includes("/api/auth/register") ||
         originalRequest.url?.includes("/api/auth/refresh")
       ) {
         return Promise.reject(error);
       }
+
+      originalRequest._retry = true;
 
       try {
         // If a refresh is already in progress, wait for it

@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
 import { issueSession } from "@/lib/session";
+import bcrypt from "bcryptjs";
+
+// Burned when the account does not exist, so a missing user costs the same
+// bcrypt work as a wrong password. Cost 12, matching the User pre-save hook.
+const DUMMY_HASH =
+  "$2b$12$AObv5IHj72.4AqqTAcBKJOMPr2v5uBaEervMRHUmrE.uLUHbeMkFK";
 
 export async function POST(req: Request) {
   try {
@@ -19,7 +25,10 @@ export async function POST(req: Request) {
     //we need to manually select the password as well so that out this.password can be accessed from the user model.
     const user = await User.findOne({ email }).select("+password");
 
-    if (!user || !(await user.comparePassword(password))) {
+    // Exactly one compare runs on every path — including Google-only accounts,
+    // which have no password at all.
+    const matches = await bcrypt.compare(password, user?.password || DUMMY_HASH);
+    if (!user || !user.password || !matches) {
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }

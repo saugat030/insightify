@@ -7,8 +7,25 @@ export async function GET(req: NextRequest) {
     const auth = await requireAuth(req);
     if (!auth.ok) return auth.response;
 
-    // return the user data
-    return NextResponse.json(auth.user, { status: 200 });
+    // Explicit projection — vault material and session bookkeeping are not the
+    // client's business, and /api/vault serves the vault fields separately.
+    const u = auth.user;
+    return NextResponse.json(
+      {
+        _id: u._id,
+        username: u.username,
+        email: u.email,
+        emailVerified: !!u.emailVerified,
+        role: u.role,
+        tier: u.tier,
+        profilePicture: u.profilePicture ?? null,
+        googleId: u.googleId ?? null,
+        linksCreatedCount: u.linksCreatedCount,
+        lastResetDate: u.lastResetDate,
+        createdAt: u.createdAt,
+      },
+      { status: 200 }
+    );
   } catch (error) {
     console.error("[AUTH_ME_ERROR]", error);
     return NextResponse.json(

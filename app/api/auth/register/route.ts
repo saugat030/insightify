@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
+import { checkPasswordStrength } from "@/lib/passwordStrength";
 
 export async function POST(req: Request) {
   try {
@@ -20,13 +21,23 @@ export async function POST(req: Request) {
       );
     }
 
+    const strength = await checkPasswordStrength(password, [email, username]);
+    if (!strength.ok) {
+      return NextResponse.json({ error: strength.error }, { status: 400 });
+    }
+
     await connectToDb();
 
-    // check if the user already exists
-    const existingUser = await User.findOne({ email });
+    // Same uniqueness rule the admin create-user path applies.
+    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
     if (existingUser) {
       return NextResponse.json(
-        { error: "Email already in use" },
+        {
+          error:
+            existingUser.email === String(email).toLowerCase()
+              ? "Email already in use"
+              : "Username already taken",
+        },
         { status: 409 }
       );
     }

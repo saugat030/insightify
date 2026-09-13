@@ -11,20 +11,14 @@ interface RoleGuardProps {
 export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
-  console.log("Role guard triggered, deciding where to send the user.", user);
   useEffect(() => {
     if (!isLoading) {
       // if not logged in at all, go to login
-      console.log("User is logged in, checking role.", user);
       if (!user) {
         router.push("/login");
       }
       // if logged in but wrong role, go to unauthorized page or dashboard
       else if (!allowedRoles.includes(user.role)) {
-        console.log(
-          "User has wrong role, redirecting to unauthorized page.",
-          user
-        );
         router.push("/unauthorized");
       }
     }

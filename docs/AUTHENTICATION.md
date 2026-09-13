@@ -36,8 +36,10 @@
 10. [Endpoint reference](#10-endpoint-reference)
 
 > **Fix log:** closed findings are marked ✅ here and written up in
-> [`AUTH-FIX.md`](./AUTH-FIX.md). Fixed so far: **F8**, **F1**, **F11**, **F2**, **F5**, **F10**,
-> **F20**, **F22**, **F18**, **F21**, **F4**.
+> [`AUTH-FIX.md`](./AUTH-FIX.md). Fixed so far: **F8**, **F1**, **F11**, **F2**, **F5**, **F10**, **F20**,
+> **F22**, **F18**, **F21**, **F4**, **F9**, **F13**, **F14**, **F15**, **F16**,
+> **F17**, **F19**, **F25**; **F7** and **F12** partly. Still open: **F6**
+> (rate limiting, handled separately), **F23** and **F24**.
 
 ---
 
@@ -90,7 +92,7 @@ stateless JWT scheme cannot do.
 | [`lib/session.ts`](../lib/session.ts) | **The session lifecycle in one place** — `issueSession`, `revokeSession`, `revokeAllSessions`, `clearSessionCookie`. Both login paths go through it. |
 | [`hooks/useAuth.tsx`](../hooks/useAuth.tsx) | `AuthProvider` — holds the access token and user object; `login`/`register`/`googleLogin`/`logout`/`logoutAll`. |
 | [`lib/axiosInstance.ts`](../lib/axiosInstance.ts) | Attaches the bearer token; intercepts `401` and retries once after refreshing. |
-| [`middleware.ts`](../middleware.ts) | Edge cookie *presence* check for a small set of routes. |
+| [`proxy.ts`](../proxy.ts) | Edge cookie *presence* check (Next 16 name for middleware). Covers every private route. |
 | [`app/_components/private/rolegaurd.tsx`](../app/_components/private/rolegaurd.tsx) | Client-side role gate for private layouts. |
 | `app/api/auth/*` | `register`, `login`, `refresh`, `logout`, `me`, `google`, `change-password`. |
 
@@ -385,13 +387,17 @@ Two properties worth being explicit about:
 
 1. **Revocation is not immediate.** For up to 15 minutes (the access-token TTL)
    a revoked device can still read *and mutate* data, because the access token
-   is stateless and never checked against the DB. This is inherent to the model
-   — see [§7.4](#74-architectural-assessment-is-the-split-token-model-earning-its-keep)
-   and **F21**, which remains open.
-2. **A revoked device's cookie lingers** for its full 30 days.
-   `middleware.ts` checks only cookie *presence*, so it can still navigate to
-   `/dashboard`, pass the edge check, render the shell, and only then be bounced
-   by `RoleGuard`. That is **F9**, still open.
+   is stateless and never checked against the DB. **Global revocation no longer
+   lags** — `logout-all` and password change stamp `sessionsRevokedAt`, which
+   `requireAuth()` enforces on the next request (F21). The lag survives only for
+   *single-device* logout, because the access token carries no `jti`. See
+   [§7.4](#74-architectural-assessment-is-the-split-token-model-earning-its-keep).
+2. **A revoked device's cookie lingers** for its full 30 days, and
+   [`proxy.ts`](../proxy.ts) checks only cookie *presence* — so it passes the
+   edge check, renders the shell, and is bounced by `RoleGuard`. Widening the
+   matcher (F9) fixed *coverage*, not this: a presence check cannot tell a live
+   cookie from a revoked one. Verifying it at the edge would mean a DB read per
+   navigation, which is why the API layer remains the real enforcement.
 
 #### Logging out of one device
 
@@ -428,14 +434,15 @@ There are **three independent layers**, and they do not cover the same routes:
 
 | Layer | Where | What it actually checks |
 | --- | --- | --- |
-| Edge middleware | `middleware.ts` | Only that a `refreshToken` cookie **exists** — no signature check. Matcher: `/dashboard/:path*`, `/login`, `/register`, `/profile/:path*`. |
+| Edge proxy | [`proxy.ts`](../proxy.ts) | Only that a `refreshToken` cookie **exists** — no signature check. Matcher now covers **every** private route. A UX guard, not enforcement. |
 | Client `RoleGuard` | private layouts | `user` is loaded and `user.role` is allowed; redirects to `/login` or `/unauthorized`. |
 | **API routes** | every `app/api/**` handler | `requireAuth()` / `requireAdmin()` — verifies the signature, loads the user, and rejects revoked sessions. **This is the only real enforcement.** |
 
-Routes such as `/editor`, `/links`, `/settings`, `/media` and `/admin/*` are
-**not** in the middleware matcher — they are gated only by `RoleGuard` on the
-client. That is not a data breach (the APIs behind them are properly
-authenticated), but it does mean the page shell renders before redirecting.
+Since the F9 fix every private route is in the matcher, so a signed-out visitor
+is redirected at the edge rather than after the shell paints. This remains a
+**cookie-presence** check only — a stale or revoked cookie still passes it, and
+is caught by `RoleGuard` and the API layer. Keep the matcher in step with
+`app/(private)` when routes are added.
 
 ---
 
@@ -551,10 +558,10 @@ current environment the Google exchange fails before any of F1/F2 matters.
 | ✅ **F4** | ~~**No refresh-token rotation or reuse detection.**~~ **Fixed** — every refresh mints a new `jti` and retires the old row; replaying a retired one outside a 60s multi-tab grace window revokes that token family. Shipped with the `absoluteExpiresAt` hard cap. See [AUTH-FIX §6](./AUTH-FIX.md#6--f4--refresh-token-rotation-with-reuse-detection). | A stolen refresh token is valid for 30 days and its use is indistinguishable from the legitimate user's. Rotation + reuse detection turns theft into a detectable event. |
 | ✅ **F5** | ~~**Changing the password does not revoke sessions.**~~ **Fixed** — `change-password` now calls `revokeAllSessions()` and re-issues a fresh session to the caller. See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). | Defeats the main reason people change passwords. An attacker with a stolen refresh token keeps access. |
 | **F6** | **No rate limiting** on `login`, `register`, or `refresh`. | Credential stuffing and brute force are unimpeded. bcrypt cost 12 slows each attempt but is not a substitute. |
-| **F7** | **User enumeration.** `register` returns `409 "Email already in use"`; `login` runs bcrypt only when the user exists, so response timing differs measurably. | Lets an attacker build a list of valid accounts before attacking them. |
+| 🟡 **F7** | **Login timing fixed** — one bcrypt compare runs on every path, against a dummy hash when the account is missing (measured 261ms vs 248ms). ~~`login` runs bcrypt only when the user exists.~~ **`register`'s `409` remains** — responding identically needs the signal to move to the inbox, i.e. the [v2 OTP flow](#92-email-verification-otp--v2). See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). | Lets an attacker build a list of valid accounts before attacking them. |
 | ✅ **F8** | ~~**`verifyAccessToken` casts instead of validating.**~~ **Fixed** — see [AUTH-FIX §1](./AUTH-FIX.md#1--f8--token-payload-shape-was-never-validated-at-runtime). | This is the *root cause* that let F1 ship silently. A runtime shape check would have failed loudly. |
-| **F9** | **Middleware covers only 4 route patterns**; `/editor`, `/links`, `/settings`, `/media`, `/admin/*` rely on client-side `RoleGuard`. | Not a data leak (APIs are enforced) but inconsistent, and it lets private shells paint before redirecting. |
-| **F19** | **The split-token architecture is not banking its own benefits** — full audit in [§7.4](#74-architectural-assessment-is-the-split-token-model-earning-its-keep). **Resolved as a decision (Option A); remains open as work.** | The design pays the full complexity cost of two token types, an interceptor, refresh dedupe and a bootstrap round-trip, while realising only ~2 of its ~6 advantages. Not a defect to fix on its own — it is the *framing* for F1, F4, F5, F10 and F21: completing those is what makes the split earn its keep. |
+| ✅ **F9** | ~~**Middleware covers only 4 route patterns.**~~ **Fixed** — the matcher now lists every private route (`/editor`, `/links`, `/settings`, `/media`, `/products`, `/admin/*`). Dead `publicRoutes` and the non-existent `/profile` were removed. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). | Not a data leak (APIs are enforced) but inconsistent, and it lets private shells paint before redirecting. |
+| ✅ **F19** | **The split-token architecture is not banking its own benefits** — full audit in [§7.4](#74-architectural-assessment-is-the-split-token-model-earning-its-keep). **Resolved as a decision (Option A); now also discharged as work** — F1, F4, F5, F10 and F21 have all landed, and §7.4's scorecard moved from 2 clear / 1 partial / 3 unrealised to **4 clear / 1 partial / 1 N/A**. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). | The design pays the full complexity cost of two token types, an interceptor, refresh dedupe and a bootstrap round-trip, while realising only ~2 of its ~6 advantages. Not a defect to fix on its own — it is the *framing* for F1, F4, F5, F10 and F21: completing those is what makes the split earn its keep. |
 
 ### 7.3 Moderate / hygiene
 
@@ -562,19 +569,19 @@ current environment the Google exchange fails before any of F1/F2 matters.
 | --- | --- |
 | ✅ **F10** | ~~**Login wipes every other session** — `RefreshToken.deleteMany({ user })` before creating the new one. Signing in on a phone silently logs you out on your laptop.~~ **Fixed** — the `deleteMany` is gone; sessions are per-device and uncapped. See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). |
 | ✅ **F11** | ~~**Cookie settings differ between flows** — password: `sameSite: "lax"`, 30 days; Google: `sameSite: "strict"`, 7 days. Also the Google cookie uses `maxAge` while login uses `expires`.~~ **Fixed** as a consequence of F1 — a shared issuer cannot emit two sets of flags. Both are now `sameSite: "lax"`, 30 days, `expires`. See [AUTH-FIX §2](./AUTH-FIX.md#2--f1--google-oauth-issued-tokens-with-the-wrong-claim-shape). |
-| **F12** | **`/api/auth/change-password` has no caller in the UI** and doesn't handle Google-only accounts gracefully (they hit "Incorrect old password" because they have no password at all). |
-| **F13** | **`RoleGuard` logs the full user object to the console on every render** (`console.log("Role guard triggered…", user)`) — PII in the production browser console. |
-| **F14** | **Registration doesn't enforce username uniqueness** (no unique index, no check), while the admin create-user path does check it. Inconsistent. |
-| **F15** | **Password policy is length ≥ 8 only.** `zxcvbn` is already a dependency (added for the vault) and could enforce real strength. |
-| **F16** | **`middleware.ts` is deprecated in Next 16** — logs a warning on every boot; should become `proxy.ts`. |
-| **F17** | **`/api/auth/me` returns the whole user document** (minus password), including `googleId`, `vaultSalt`, `vaultVerifier`. All safe by design, but broader than needed. |
+| 🟡 **F12** | ~~doesn't handle Google-only accounts gracefully~~ **Fixed** — returns `400 NO_PASSWORD_SET` with an explanation. **Still has no caller in the UI**: the settings page is an "Under Construction" placeholder, so building one is a feature, not a cleanup. `useAuth().logoutAll()` is unwired for the same reason. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). |
+| ✅ **F13** | ~~**`RoleGuard` logs the full user object to the console on every render**~~ **Fixed** — three logs in `RoleGuard`, one in `useAuth.login`, and `proxy.ts`'s per-request `"Middleware hit"` all removed. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). |
+| ✅ **F14** | ~~**Registration doesn't enforce username uniqueness**~~ **Fixed** — `register` now applies the same `$or: [{email}, {username}]` check the admin path uses, and says which field collided. A unique *index* was deliberately not added: it fails to build if duplicates already exist. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). |
+| ✅ **F15** | ~~**Password policy is length ≥ 8 only.**~~ **Fixed** — `register` and `change-password` gate on zxcvbn score ≥ 3 via [`lib/passwordStrength.ts`](../lib/passwordStrength.ts), with email and username as `userInputs`. (The dependency is `@zxcvbn-ts/core`, not classic `zxcvbn`.) See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). |
+| ✅ **F16** | ~~**`middleware.ts` is deprecated in Next 16.**~~ **Fixed** — now [`proxy.ts`](../proxy.ts) exporting `proxy`. The build reports `ƒ Proxy (Middleware)` with no warning. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). |
+| ✅ **F17** | ~~**`/api/auth/me` returns the whole user document.**~~ **Fixed** — an explicit projection of the ten fields the client reads, plus `emailVerified`. Vault material was never sourced here (`useVault` uses `/api/vault`). See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). |
 | ✅ **F18** | ~~**Auth boilerplate is duplicated in ~15 route handlers**~~ **Fixed** — all 15 call sites now go through `requireAuth()` / `requireAdmin()` in [`lib/requireAuth.ts`](../lib/requireAuth.ts). `verifyAccessToken` has exactly one caller. See [AUTH-FIX §5](./AUTH-FIX.md#5--f18-f21--one-auth-helper-and-immediate-global-revocation). |
 | ✅ **F20** | ~~**There is no "sign out of all devices".**~~ **Fixed** — `POST /api/auth/logout-all`, exposed as `useAuth().logoutAll()`. Now expressible precisely because F10 made multiple rows possible. **No UI button is wired yet** (same gap as F12). See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). |
 | ✅ **F21** | ~~**Revocation has an up-to-15-minute lag.**~~ **Fixed for global revocation** — `User.sessionsRevokedAt` is stamped by `revokeAllSessions()` and enforced in `requireAuth()`, so "sign out everywhere" and password change take effect on the **next request**, not in 15 minutes. Costs no extra query: the user document was already being loaded. **Per-device logout still lags** — the access token carries no `jti`, so making that immediate would need a `RefreshToken` read per request. Accepted. See [AUTH-FIX §5](./AUTH-FIX.md#5--f18-f21--one-auth-helper-and-immediate-global-revocation). |
 | ✅ **F22** | ~~**`deleteMany` → `create` in `login` is not atomic**~~ **Dissolved by the F10 fix** — there is no delete-then-create sequence left. Two simultaneous logins are now *supposed* to leave two rows, and with no session cap there is nothing further to reconcile. See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). |
 | **F23** | **No "remember me" — and no way to opt out of being remembered.** `login` hardcodes `REFRESH_TOKEN_EXPIRATION_DAYS = 30` and always sets a *persistent* cookie, so every sign-in (including on a shared or public machine) persists for 30 days. **v1: cookie-only opt-out** (session cookie when unchecked); **server-enforced expiry deferred to v2.** See [§9.1](#91-designing-remember-me-under-option-a). |
 | **F24** | **Operational note, not a vulnerability — no signing-key rotation support.** `JWT_SECRET` / `JWT_REFRESH_SECRET` are single static values with no `kid` claim and no multi-key verification, so rotating either logs every user out at once. Only relevant for *mundane* rotation (e.g. someone with env access leaves). **Explicitly not a threat model:** secret compromise is not a scenario this design should be expected to mitigate — `MONGODB_URI` lives in the same `.env.local`, so anything that leaks the signing key also surrenders the database, and an attacker who owns the datastore can read everything and insert their own session rows regardless of architecture. Revocation is meaningless when the attacker controls the revocation table. (Minor asymmetry: Atlas is IP-allowlisted, so the DB URI carries a network-level second factor the signing key does not — but the correct response to a leaked key is still rotate-and-force-relogin.) |
-| **F25** | **The interceptor's `/api/auth/me` skip is implicitly coupled to a single call site.** It is correct only because `/me` is called exactly once, immediately after a successful refresh. Nothing documents or enforces that. Add a `/me` call anywhere else — a profile re-fetch, a settings reload — and past the 15-minute access-token window it will 401 and **fail hard instead of transparently recovering**, with a non-obvious cause. Since `_retry` already prevents loops, prefer narrowing the skip-list to `/refresh` + `/login` (dropping `/me` and the dead `/register` entry), or comment the assumption explicitly. Minor related wart: `_retry` is set *before* the skip-list check, so skipped requests are marked retried despite never being retried. |
+| ✅ **F25** | ~~**The interceptor's `/api/auth/me` skip is implicitly coupled to a single call site.**~~ **Fixed** — narrowed to `/login` + `/refresh`, and `_retry` is now set only on the path that actually retries. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). Original analysis: It is correct only because `/me` is called exactly once, immediately after a successful refresh. Nothing documents or enforces that. Add a `/me` call anywhere else — a profile re-fetch, a settings reload — and past the 15-minute access-token window it will 401 and **fail hard instead of transparently recovering**, with a non-obvious cause. Since `_retry` already prevents loops, prefer narrowing the skip-list to `/refresh` + `/login` (dropping `/me` and the dead `/register` entry), or comment the assumption explicitly. Minor related wart: `_retry` is set *before* the skip-list check, so skipped requests are marked retried despite never being retried. |
 
 ---
 
@@ -780,29 +787,36 @@ These are deliberate, correct choices and should be preserved:
    `sessionsRevokedAt` check shipped instead: **immediate** global revocation at
    **zero** extra queries. The TTL stays at 15 minutes. See [AUTH-FIX §5](./AUTH-FIX.md#5--f18-f21--one-auth-helper-and-immediate-global-revocation).
 10. **Rate limiting (F6)** on `login`/`register`/`refresh` — per-IP and per-account.
-11. **Constant-time login (F7):** run a dummy bcrypt compare when the user is not
-    found, and make `register` respond identically whether or not the email exists
-    (send a "check your inbox" style response instead of `409`).
+11. 🟡 **PARTLY DONE — Constant-time login (F7):** ~~run a dummy bcrypt compare
+    when the user is not found~~ done. ~~and make `register` respond identically~~
+    **deferred** — that needs the inbox to carry the signal, i.e. the
+    [v2 OTP flow](#92-email-verification-otp--v2). See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25).
 12. ✅ **DONE — Extract one `requireAuth(req)` / `requireAdmin(req)` helper
     (F18)** ~~and use it in every route handler.~~ Done; it is also where the
     F21 revocation check lives. See [AUTH-FIX §5](./AUTH-FIX.md#5--f18-f21--one-auth-helper-and-immediate-global-revocation).
-13. **Widen the middleware matcher (F9)** to all private routes, or drop the
-    middleware layer entirely and rely on `RoleGuard` + API enforcement — but
-    pick one deliberately.
+13. ✅ **DONE — Widen the middleware matcher (F9)** to all private routes.
+    ~~or drop the middleware layer entirely~~ — widened deliberately: it is cheap
+    and stops private shells painting. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25).
 
 ### Cleanup
 
-14. Remove the `RoleGuard` console logging (F13).
+14. ✅ **DONE** — ~~Remove the `RoleGuard` console logging (F13).~~ Four PII logs
+    and one per-request proxy log removed. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25).
 15. ✅ **DONE** — ~~Align cookie flags between the two login paths (F11).~~
     Fell out of the F1 shared-issuer extraction.
-16. Rename `middleware.ts` → `proxy.ts` for Next 16 (F16).
-17. Narrow the axios skip-list to `/refresh` + `/login` (F25), dropping the `/me`
-    coupling and the dead `/register` entry.
-18. Give `change-password` a UI caller, and handle Google-only accounts
-    explicitly rather than reporting "Incorrect old password" (F12).
-19. Add `zxcvbn` strength gating at registration (F15); enforce username
-    uniqueness or drop the notion (F14).
-20. Trim `/api/auth/me` to the fields the client actually uses (F17).
+16. ✅ **DONE** — ~~Rename `middleware.ts` → `proxy.ts` for Next 16 (F16).~~ See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25).
+17. ✅ **DONE** — ~~Narrow the axios skip-list to `/refresh` + `/login` (F25).~~
+    Also fixed `_retry` being set before the skip check. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25).
+18. 🟡 **PARTLY DONE** — ~~handle Google-only accounts explicitly rather than
+    reporting "Incorrect old password" (F12)~~ done (`400 NO_PASSWORD_SET`).
+    **"Give `change-password` a UI caller" remains open** — the settings page is
+    a placeholder, so this is a feature. It should ship together with a button
+    for `useAuth().logoutAll()` (F20), which is unwired for the same reason.
+    See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25).
+19. ✅ **DONE** — ~~Add `zxcvbn` strength gating at registration (F15); enforce
+    username uniqueness or drop the notion (F14).~~ Both done; uniqueness is
+    enforced by query rather than a unique index, for the reason given in [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25).
+20. ✅ **DONE** — ~~Trim `/api/auth/me` to the fields the client actually uses (F17).~~ See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25).
 
 ### Not scheduled
 
