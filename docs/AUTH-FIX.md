@@ -11,6 +11,8 @@ is easy to tell apart from closed work at a glance.
 | # | Finding | Title | Status |
 | --- | --- | --- | --- |
 | 1 | **F8** | `verifyAccessToken` casts instead of validating | ✅ Fixed |
+| 2 | **F1** | Google OAuth issued tokens with the wrong claim shape | ✅ Fixed |
+| 2 | **F11** | Cookie flags differed between the two login paths | ✅ Fixed — fell out of F1 |
 
 ---
 
@@ -94,3 +96,96 @@ round-trip test confirms they are untouched. The Google flow changes from one
 broken failure mode to another, better one: a `404 User not found` from a
 downstream DB lookup becomes a `401` at the auth boundary, with a log line
 naming the offending claims. F1 remains open and is the next fix.
+
+---
+
+## 2 — F1 · Google OAuth issued tokens with the wrong claim shape
+
+**Files:** [`lib/session.ts`](../lib/session.ts) (new),
+[`app/api/auth/google/route.ts`](../app/api/auth/google/route.ts),
+[`app/api/auth/login/route.ts`](../app/api/auth/login/route.ts)
+
+*Closes **F11** in the same change — see below.*
+
+### The issue
+
+The Google route hand-rolled its own JWTs instead of using `lib/auth.ts`, with
+different claim names and a different cookie:
+
+```ts
+jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET!,         { expiresIn: "15m" })
+jwt.sign({ id: user._id, role: user.role }, process.env.JWT_REFRESH_SECRET!, { expiresIn: "7d"  })
+```
+
+Three consequences, all of which made Google sign-in unusable:
+
+1. Every protected route reads `payload.userId`, which was `undefined` here, so
+   `User.findById(undefined)` returned `null` → `404 User not found`. A
+   Google-authenticated user could call **no** protected API.
+2. The refresh token carried no `jti` and was never written to the
+   `RefreshToken` allow-list, so `/api/auth/refresh` returned
+   `401 Token has been revoked`. Since `AuthProvider` refreshes on mount, the
+   session died at the first page reload.
+3. Logout could not revoke a Google session — `deleteOne({ jti: undefined })`
+   matched nothing.
+
+Separately (**F11**), the two flows set materially different cookies: the
+password flow `sameSite: "lax"` / 30 days / `expires`, the Google flow
+`sameSite: "strict"` / 7 days / `maxAge`.
+
+### The fix
+
+Both defects share one root cause — *two independently written session-issuing
+sites* — so the fix removes the second site rather than correcting it.
+
+New `lib/session.ts` exports `issueSession(user)`, the single place a session is
+minted. It generates both tokens through `lib/auth.ts`, writes the `jti`
+allow-list row, sets the cookie, and returns the access token. `login` and
+`google` now each call it and do nothing else token-related.
+
+F11 is closed by construction: one issuer cannot emit two sets of cookie flags.
+The surviving values are the password flow's — `httpOnly`, `secure` in
+production, `path: "/"`, `sameSite: "lax"`, `expires` at +30 days.
+
+Deliberately **not** changed: `issueSession` keeps the
+`RefreshToken.deleteMany({ user })` that makes the app single-session. That is
+**F10**, still open, and moving it here would have buried a behaviour change
+inside a correctness fix. The effect is that Google logins now inherit the same
+single-session semantics the password flow already had. The line is commented as
+such in the source.
+
+### Verification
+
+`npx tsc --noEmit` clean; `npx next build` succeeds with all 19 API routes
+compiled. Token shape checked against the real `lib/auth.ts` using a genuine
+Mongoose `ObjectId` as `user._id`:
+
+| Check | Before | After |
+| --- | --- | --- |
+| `verifyAccessToken(...).userId` | `undefined` | the real id, `6aa668bb…` |
+| `verifyRefreshToken(...).jti` | `undefined` | matches the allow-list row |
+| `verifyRefreshToken(...).userId` | `undefined` | the real id |
+| Hand-rolled `jwt.sign` in the Google route | 2 calls | none |
+
+Note that the F8 guards now also *enforce* this: had the Google route kept its
+old shape, `verifyAccessToken` would reject it outright rather than passing an
+`undefined` downstream.
+
+### ⚠️ This fix escalates F2 — read before configuring Google
+
+While Google sign-in was broken, **F2** (account linking never checks the
+`email_verified` claim) was unreachable. It is now reachable. The flow links a
+Google identity onto any existing account matching the email, with no proof of
+the password — the classic pre-account-takeover vector.
+
+The only thing still preventing this from being live is **F3**: without
+`GOOGLE_CLIENT_SECRET`, `oAuth2Client.getToken(code)` fails before any of this
+code runs. **F2 must land before that secret is set.** It is the next fix.
+
+### Blast radius
+
+The password flow is behaviourally identical apart from the code now living in
+`lib/session.ts` — same claims, same cookie, same allow-list writes. The Google
+flow changes from broken to correct, but **remains untestable end to end** until
+F3 is resolved, so it is verified at the unit level only and should be treated
+as unproven against a live Google response.

@@ -7,7 +7,9 @@
 
 - **Audience:** developers working on auth, and anyone assessing security posture
 - **Status of the code at time of writing:** password flow solid; **Google OAuth
-  is broken** (see [§7.1](#71-critical))
+  was broken** (F1) — ~~see [§7.1](#71-critical)~~ **now fixed**, though Google
+  sign-in still cannot run at all until `GOOGLE_CLIENT_SECRET` is set (F3), and
+  **must not be enabled before F2 lands** (see the warning in §7.1)
 - **Fix log:** [`AUTH-FIX.md`](./AUTH-FIX.md) — findings are worked through one
   at a time and recorded there in the order they were fixed. A finding marked
   **✅ Fixed** below is closed; everything unmarked is still open.
@@ -239,20 +241,24 @@ POST /api/auth/logout
 Client: clear user + access token, router.push("/login")
 ```
 
-### 5.7 Google OAuth (⚠ currently broken — see §7.1)
+### 5.7 Google OAuth (✅ token issuance fixed — F1)
 
 ```
 Browser (@react-oauth/google, auth-code flow) -> code
 POST /api/auth/google { code }
-  ├─ oAuth2Client.getToken(code)          ← needs GOOGLE_CLIENT_SECRET
+  ├─ oAuth2Client.getToken(code)          ← needs GOOGLE_CLIENT_SECRET (F3, open)
   ├─ verifyIdToken({ idToken, audience })
   ├─ find user by email
   │    ├─ none  -> create { username, email, googleId, profilePicture }
-  │    └─ exists-> link googleId onto the existing account
-  ├─ jwt.sign({ id, role }, JWT_SECRET, 15m)          ← WRONG CLAIM SHAPE
-  ├─ jwt.sign({ id, role }, JWT_REFRESH_SECRET, 7d)   ← no jti, not persisted
-  └─ Set-Cookie refreshToken  httpOnly, sameSite=strict, 7d
+  │    └─ exists-> link googleId onto the existing account   ← F2 still OPEN
+  └─ issueSession(user)        ← the SAME issuer the password flow uses
 ```
+
+Since the F1 fix, `issueSession()` in [`lib/session.ts`](../lib/session.ts) is
+the only place either flow mints a session, so the claim shape, the allow-list
+row and the cookie flags are identical by construction. The former
+`jwt.sign({ id, role })` calls and the divergent `sameSite=strict`/7-day cookie
+are gone. See [AUTH-FIX §2](./AUTH-FIX.md#2--f1--google-oauth-issued-tokens-with-the-wrong-claim-shape).
 
 ### 5.8 Change password
 
@@ -297,9 +303,12 @@ Related wrinkles:
 - Device A's dead cookie remains for 30 days. `middleware.ts` checks only cookie
   *presence*, so A can navigate to `/dashboard`, pass the edge check, render the
   shell, and only then be bounced by `RoleGuard`.
-- **The Google route behaves differently** — it never imports `RefreshToken`, so
-  it neither clears existing sessions nor registers its own (F1). Moot while
-  Google is broken, but the inconsistency must be resolved in the same pass.
+- ✅ ~~**The Google route behaves differently** — it never imports
+  `RefreshToken`, so it neither clears existing sessions nor registers its own
+  (F1).~~ **Resolved.** Both flows now go through `issueSession()`, so Google
+  sign-in clears and registers allow-list rows exactly as the password flow
+  does — including the `deleteMany` that makes this section's single-session
+  behaviour apply to Google logins too.
 
 #### Logging out of one device
 
@@ -348,7 +357,17 @@ authenticated), but it does mean the page shell renders before redirecting.
 
 ### 7.1 Critical
 
-#### F1 — Google OAuth issues tokens with the wrong claim shape (breaks Google sign-in)
+#### ✅ F1 — ~~Google OAuth issues tokens with the wrong claim shape (breaks Google sign-in)~~ — FIXED
+
+> **Fixed.** `app/api/auth/google/route.ts` and `app/api/auth/login/route.ts`
+> now both call `issueSession()` in [`lib/session.ts`](../lib/session.ts), the
+> single place a session is minted. See
+> [AUTH-FIX §2](./AUTH-FIX.md#2--f1--google-oauth-issued-tokens-with-the-wrong-claim-shape).
+> The analysis below is retained as the record of what was wrong.
+>
+> ⚠️ **Fixing F1 made F2 live.** While Google sign-in was broken, the
+> unverified-email linking vector was unreachable. It is now reachable the
+> moment `GOOGLE_CLIENT_SECRET` is set. **Do not set it until F2 lands.**
 
 `app/api/auth/google/route.ts` hand-rolls its JWTs instead of using
 `lib/auth.ts`, and uses different claim names:
@@ -413,6 +432,12 @@ without any proof of the password. This is the classic pre-account-takeover
 linking vector. Google normally only issues verified emails for consumer
 accounts, but the claim exists precisely so relying parties check it.
 
+> ⚠️ **Escalated by the F1 fix.** This was previously moot — the Google flow was
+> broken end to end, so nothing could reach the linking code. With F1 fixed, the
+> only remaining thing standing between this and a live pre-account-takeover
+> vector is F3 (the missing `GOOGLE_CLIENT_SECRET`). **F2 must land before that
+> secret is configured.** It is the next fix.
+
 #### F3 — `GOOGLE_CLIENT_SECRET` is not configured
 
 `.env.local` defines `NEXT_PUBLIC_GOOGLE_CLIENT_ID` but **not**
@@ -436,7 +461,7 @@ current environment the Google exchange fails before any of F1/F2 matters.
 | # | Finding |
 | --- | --- |
 | **F10** | **Login wipes every other session** — `RefreshToken.deleteMany({ user })` before creating the new one. Signing in on a phone silently logs you out on your laptop. This may be intentional; if so it should be documented, and if not it should be `deleteOne` on the *old* jti. |
-| **F11** | **Cookie settings differ between flows** — password: `sameSite: "lax"`, 30 days; Google: `sameSite: "strict"`, 7 days. Also the Google cookie uses `maxAge` while login uses `expires`. |
+| ✅ **F11** | ~~**Cookie settings differ between flows** — password: `sameSite: "lax"`, 30 days; Google: `sameSite: "strict"`, 7 days. Also the Google cookie uses `maxAge` while login uses `expires`.~~ **Fixed** as a consequence of F1 — a shared issuer cannot emit two sets of flags. Both are now `sameSite: "lax"`, 30 days, `expires`. See [AUTH-FIX §2](./AUTH-FIX.md#2--f1--google-oauth-issued-tokens-with-the-wrong-claim-shape). |
 | **F12** | **`/api/auth/change-password` has no caller in the UI** and doesn't handle Google-only accounts gracefully (they hit "Incorrect old password" because they have no password at all). |
 | **F13** | **`RoleGuard` logs the full user object to the console on every render** (`console.log("Role guard triggered…", user)`) — PII in the production browser console. |
 | **F14** | **Registration doesn't enforce username uniqueness** (no unique index, no check), while the admin create-user path does check it. Inconsistent. |
@@ -596,11 +621,13 @@ These are deliberate, correct choices and should be preserved:
 
 ### Do first (correctness / security)
 
-1. **Fix the Google route (F1).** Delete the hand-rolled `jwt.sign` calls and use
-   `generateAccessToken({ userId, email })` / `generateRefreshToken({ userId })`,
-   then persist the `jti` to `RefreshToken` and set the cookie exactly as
-   `login` does. Ideally extract the shared "issue a session" logic used by
-   `login` and `google` into one function so they cannot drift again.
+1. ✅ **DONE — Fix the Google route (F1).** ~~Delete the hand-rolled `jwt.sign`
+   calls and use `generateAccessToken({ userId, email })` /
+   `generateRefreshToken({ userId })`, then persist the `jti` to `RefreshToken`
+   and set the cookie exactly as `login` does.~~ Done, and the suggested shared
+   "issue a session" function was extracted — `issueSession()` in
+   [`lib/session.ts`](../lib/session.ts) — so the two paths cannot drift again.
+   See [AUTH-FIX §2](./AUTH-FIX.md#2--f1--google-oauth-issued-tokens-with-the-wrong-claim-shape).
 2. **Check `email_verified` (F2)** before creating *or linking* a Google account.
    Refuse, or require a password challenge, when linking to an existing account.
 3. ✅ **DONE — Validate token payload shape at runtime (F8)** — ~~have
@@ -649,7 +676,8 @@ These are deliberate, correct choices and should be preserved:
 ### Cleanup
 
 14. Remove the `RoleGuard` console logging (F13).
-15. Align cookie flags between the two login paths (F11).
+15. ✅ **DONE** — ~~Align cookie flags between the two login paths (F11).~~
+    Fell out of the F1 shared-issuer extraction.
 16. Rename `middleware.ts` → `proxy.ts` for Next 16 (F16).
 17. Narrow the axios skip-list to `/refresh` + `/login` (F25), dropping the `/me`
     coupling and the dead `/register` entry.

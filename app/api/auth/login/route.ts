@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
-import RefreshToken from "@/models/RefreshToken";
-import { generateAccessToken, generateRefreshToken } from "@/lib/auth";
-
-const REFRESH_TOKEN_EXPIRATION_DAYS = 30;
-const REFRESH_TOKEN_COOKIE_NAME = "refreshToken";
+import { issueSession } from "@/lib/session";
 
 export async function POST(req: Request) {
   try {
@@ -31,40 +26,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // generate Access Token
-    const accessToken = generateAccessToken({
-      userId: user._id,
-      email: user.email,
-    });
-
-    // generate Refresh Token (long-lived) and its unique ID (jti)
-    const { token: refreshTokenString, jti } = generateRefreshToken({
-      userId: user._id,
-    });
-
-    const expires = new Date(
-      Date.now() + REFRESH_TOKEN_EXPIRATION_DAYS * 24 * 60 * 60 * 1000
-    );
-
-    // clear old refresh tokens for this user
-    await RefreshToken.deleteMany({ user: user._id });
-
-    // save the new jti (the allow-list entry) to the database
-    await RefreshToken.create({
-      user: user._id,
-      jti: jti,
-      expires: expires,
-    });
-
-    // naya next15 cookie syntax
-    const cookieStore = await cookies();
-    cookieStore.set(REFRESH_TOKEN_COOKIE_NAME, refreshTokenString, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      expires: expires,
-      sameSite: "lax", // changed from "strict" for better compatibility
-    });
+    // mints both tokens, writes the jti allow-list row and sets the cookie
+    const accessToken = await issueSession(user);
 
     // const { password, ...userWithoutPassword } = user.toObject();
     const userObject = user.toObject();

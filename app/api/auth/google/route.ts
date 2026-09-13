@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { OAuth2Client } from "google-auth-library";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
-import jwt from "jsonwebtoken";
-import { cookies } from "next/headers";
+import { issueSession } from "@/lib/session";
 
 // The Google auth library needs exactly the same callback URL or 'postmessage' for headless flow
 const oAuth2Client = new OAuth2Client(
@@ -81,29 +80,8 @@ export async function POST(req: Request) {
       }
     }
 
-    // Generate JWT access and refresh tokens
-    const accessToken = jwt.sign(
-      { id: user._id, role: user.role },
-      process.env.JWT_SECRET!,
-      { expiresIn: "15m" }
-    );
-
-    const refreshToken = jwt.sign(
-      { id: user._id, role: user.role },
-      process.env.JWT_REFRESH_SECRET!,
-      { expiresIn: "7d" }
-    );
-
-    // Get cookie store
-    const cookieStore = await cookies();
-
-    cookieStore.set("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
-      path: "/",
-    });
+    // same session issuer the password flow uses, so the two cannot drift
+    const accessToken = await issueSession(user);
 
     const userObj = {
       _id: user._id,
