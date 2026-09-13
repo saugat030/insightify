@@ -37,7 +37,7 @@
 
 > **Fix log:** closed findings are marked ✅ here and written up in
 > [`AUTH-FIX.md`](./AUTH-FIX.md). Fixed so far: **F8**, **F1**, **F11**, **F2**, **F5**, **F10**,
-> **F20**, **F22**, **F18**, **F21**.
+> **F20**, **F22**, **F18**, **F21**, **F4**.
 
 ---
 
@@ -122,7 +122,8 @@ vaultEnabled, vaultSalt, vaultKdf, vaultVerifier      ← see ENCRYPTED_VAULT.md
 ### `RefreshToken` (the allow-list)
 
 ```
-user (ObjectId ref), jti (unique), expires (Date), createdAt
+user (ObjectId ref), jti (unique), family (uuid), usedAt (Date|null),
+replacedBy (jti|null), expires (Date), absoluteExpiresAt (Date), createdAt
 ```
 
 `RefreshTokenSchema.index({ expires: 1 }, { expireAfterSeconds: 0 })` — MongoDB
@@ -210,10 +211,20 @@ POST /api/auth/refresh
   ├─ read refreshToken cookie                         -> 401 if absent
   ├─ verifyRefreshToken(signature)                    -> 401 if invalid
   ├─ RefreshToken.findOne({ jti, user })              -> 401 if revoked
-  ├─ check tokenEntry.expires                         -> 401 (+ delete row)
   ├─ User.findById(userId)                            -> 404 if gone
-  └─ 200 { accessToken }        ← a NEW access token; refresh token unchanged
+  └─ classifyRefreshRow(row):
+       ├─ past absoluteExpiresAt -> revoke family, 401   ← the hard cap
+       ├─ usedAt set, <60s ago   -> 200 { accessToken }  ← losing tab; NO rotation
+       ├─ usedAt set, >60s ago   -> REUSE: revoke family, 401
+       └─ live -> rotate:
+            ├─ findOneAndUpdate({_id, usedAt:null}) — atomic claim
+            ├─ create new row  (same family, cap copied forward)
+            ├─ Set-Cookie      (the NEW refresh token)
+            └─ 200 { accessToken }
 ```
+
+Since F4 the refresh token is **single-use**: every refresh mints a new one and
+retires the old. See [AUTH-FIX §6](./AUTH-FIX.md#6--f4--refresh-token-rotation-with-reuse-detection).
 
 ### 5.5 Automatic retry on 401
 
@@ -537,7 +548,7 @@ current environment the Google exchange fails before any of F1/F2 matters.
 
 | # | Finding | Why it matters |
 | --- | --- | --- |
-| **F4** | **No refresh-token rotation or reuse detection.** The same 30-day token is reused for its whole life. | A stolen refresh token is valid for 30 days and its use is indistinguishable from the legitimate user's. Rotation + reuse detection turns theft into a detectable event. |
+| ✅ **F4** | ~~**No refresh-token rotation or reuse detection.**~~ **Fixed** — every refresh mints a new `jti` and retires the old row; replaying a retired one outside a 60s multi-tab grace window revokes that token family. Shipped with the `absoluteExpiresAt` hard cap. See [AUTH-FIX §6](./AUTH-FIX.md#6--f4--refresh-token-rotation-with-reuse-detection). | A stolen refresh token is valid for 30 days and its use is indistinguishable from the legitimate user's. Rotation + reuse detection turns theft into a detectable event. |
 | ✅ **F5** | ~~**Changing the password does not revoke sessions.**~~ **Fixed** — `change-password` now calls `revokeAllSessions()` and re-issues a fresh session to the caller. See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). | Defeats the main reason people change passwords. An attacker with a stolen refresh token keeps access. |
 | **F6** | **No rate limiting** on `login`, `register`, or `refresh`. | Credential stuffing and brute force are unimpeded. bcrypt cost 12 slows each attempt but is not a substitute. |
 | **F7** | **User enumeration.** `register` returns `409 "Email already in use"`; `login` runs bcrypt only when the user exists, so response timing differs measurably. | Lets an attacker build a list of valid accounts before attacking them. |
@@ -581,7 +592,7 @@ advantages are actually realised.** Audited one by one:
 | 2 | Long-lived credential is `httpOnly`, so XSS cannot steal it | ✅ **Yes** | The single most valuable property, and it is correctly implemented. |
 | 3 | Server-side revocation (which stateless JWT alone cannot do) | 🟡 **Partly → mostly** | The allow-list works for both flows now (F1), sessions are per-device and individually revocable, and "sign out everywhere" exists (F10/F20). The remaining gap is the up-to-15-minute lag (F21, open). |
 | 4 | Stateless auth — no DB round-trip per request | ❌ **No — now deliberately** | 12 of 16 route files already loaded the user, so the round-trip was being paid regardless. `requireAuth()` makes it uniform and *spends* it: the lookup that was pure cost now also enforces revocation (F21). Abandoning this advantage is a choice rather than an accident. |
-| 5 | Rotation + reuse detection turns token theft into a *detectable* event | ❌ **No** | No rotation at all (F4). This is the biggest security win of the model, entirely unrealised. |
+| 5 | Rotation + reuse detection turns token theft into a *detectable* event | ✅ **Yes** | Shipped in F4. Replaying a retired token revokes the family, so theft is now an event the server notices rather than a silent condition. |
 | 6 | Bearer tokens serve non-browser clients (mobile, CLI, third-party API) | ❌ **N/A** | There is one first-party web client on the same origin. Nothing consumes bearer tokens externally. |
 
 **Score: 2 clear, 1 partial, 3 unrealised.** The conclusion is uncomfortable but
@@ -746,13 +757,14 @@ These are deliberate, correct choices and should be preserved:
 
 ### Do next (hardening)
 
-7. **Refresh-token rotation with reuse detection (F4):** issue a new `jti` on
-   every refresh, delete the old row, and if an *already-used* jti is presented,
-   treat it as theft and revoke that user's whole token family.
-   **Must ship with an `absoluteExpiresAt` hard cap** — set once at login, copied
-   forward unchanged by each rotation, never extended. Without it, rotation
-   slides `expires` forward on every use and *every* session becomes immortal for
-   any user who returns within the window. See
+7. ✅ **DONE — Refresh-token rotation with reuse detection (F4):** ~~issue a new
+   `jti` on every refresh, delete the old row, and if an *already-used* jti is
+   presented, treat it as theft and revoke that user's whole token family.
+   **Must ship with an `absoluteExpiresAt` hard cap.**~~ Done, cap included. Two
+   refinements the plan did not anticipate: rows are **retired, not deleted**
+   (deleting makes reuse indistinguishable from noise, so detection would not
+   exist), and a **60-second grace window** is required or ordinary two-tab
+   browsing trips the theft alarm. See [AUTH-FIX §6](./AUTH-FIX.md#6--f4--refresh-token-rotation-with-reuse-detection). Original note retained:
    [§9.1](#91-designing-remember-me-under-option-a).
 8. **"Remember me", v1 (F23):** add the checkbox (defaulting to checked), send a
    **boolean** (never a duration), and vary only the cookie — persistent when

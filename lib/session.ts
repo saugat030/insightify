@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { randomUUID } from "crypto";
 import RefreshToken from "@/models/RefreshToken";
 import User from "@/models/User";
 import { generateAccessToken, generateRefreshToken } from "@/lib/auth";
@@ -25,18 +26,39 @@ export async function issueSession(user: SessionUser): Promise<string> {
 
   // Deliberately uncapped: the TTL index bounds growth, and evicting by age
   // would kill stable sessions in favour of churn. See docs/AUTH-FIX.md §4.
-  await RefreshToken.create({ user: user._id, jti, expires });
+  await RefreshToken.create({
+    user: user._id,
+    jti,
+    family: randomUUID(),
+    expires,
+    // Equal to `expires` in v1; v2's idle window makes them differ.
+    absoluteExpiresAt: expires,
+  });
 
+  await setSessionCookie(refreshTokenString, expires);
+  return accessToken;
+}
+
+export async function setSessionCookie(
+  token: string,
+  expires: Date
+): Promise<void> {
   const cookieStore = await cookies();
-  cookieStore.set(REFRESH_TOKEN_COOKIE_NAME, refreshTokenString, {
+  cookieStore.set(REFRESH_TOKEN_COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     path: "/",
     expires,
     sameSite: "lax",
   });
+}
 
-  return accessToken;
+// Revokes one rotation lineage — what detected token reuse triggers. Guarded
+// because deleteMany({ family: undefined }) would match every legacy row.
+export async function revokeFamily(family: unknown): Promise<number> {
+  if (typeof family !== "string" || family.length === 0) return 0;
+  const result = await RefreshToken.deleteMany({ family });
+  return result.deletedCount ?? 0;
 }
 
 // "Sign out of all devices". Also what a password change triggers, so a
@@ -57,4 +79,33 @@ export async function revokeSession(jti: string): Promise<void> {
 export async function clearSessionCookie(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete(REFRESH_TOKEN_COOKIE_NAME);
+}
+
+// Two tabs share one cookie jar, so both can refresh with the same token. The
+// loser arrives holding a token the winner already consumed, which is
+// indistinguishable from reuse without this window. See docs/AUTH-FIX.md §6.
+export const ROTATION_GRACE_MS = 60 * 1000;
+
+export type RefreshDecision = "expired" | "grace" | "reuse" | "rotate";
+
+export interface RefreshRowShape {
+  usedAt?: Date | null;
+  expires: Date;
+  absoluteExpiresAt?: Date | null;
+}
+
+// The whole rotation state machine, kept pure so it can be tested directly.
+// Rows predating rotation carry no cap; their `expires` is already login+30d.
+export function classifyRefreshRow(
+  row: RefreshRowShape,
+  now: Date = new Date(),
+  graceMs: number = ROTATION_GRACE_MS
+): { decision: RefreshDecision; cap: Date } {
+  const cap = new Date(row.absoluteExpiresAt ?? row.expires);
+
+  if (cap < now) return { decision: "expired", cap };
+  if (!row.usedAt) return { decision: "rotate", cap };
+
+  const sinceUse = now.getTime() - new Date(row.usedAt).getTime();
+  return { decision: sinceUse <= graceMs ? "grace" : "reuse", cap };
 }

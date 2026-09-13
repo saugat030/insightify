@@ -5,16 +5,20 @@ import User from "@/models/User";
 import RefreshToken from "@/models/RefreshToken";
 import {
   generateAccessToken,
+  generateRefreshToken,
   verifyRefreshToken,
   RefreshTokenPayload,
 } from "@/lib/auth";
+import {
+  REFRESH_TOKEN_COOKIE_NAME,
+  setSessionCookie,
+  revokeFamily,
+  classifyRefreshRow,
+} from "@/lib/session";
 import { cookies } from "next/headers";
-
-const REFRESH_TOKEN_COOKIE_NAME = "refreshToken";
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Get the refresh token from the httpOnly cookie
     const cookieStore = await cookies();
     const tokenCookie = cookieStore.get(REFRESH_TOKEN_COOKIE_NAME);
 
@@ -24,11 +28,10 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
-    const refreshTokenString = tokenCookie.value;
 
-    // 2. Verify the token's signature
-    const payload: RefreshTokenPayload | null =
-      verifyRefreshToken(refreshTokenString);
+    const payload: RefreshTokenPayload | null = verifyRefreshToken(
+      tokenCookie.value
+    );
     if (!payload) {
       return NextResponse.json(
         { error: "Unauthorized: Invalid token" },
@@ -36,46 +39,88 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. Connect to DB
     await connectToDb();
 
-    // 4. Check if the token is in our "allow-list"
-    const tokenEntry = await RefreshToken.findOne({
+    const row = await RefreshToken.findOne({
       jti: payload.jti,
       user: payload.userId,
     });
-
-    if (!tokenEntry) {
+    if (!row) {
       return NextResponse.json(
         { error: "Unauthorized: Token has been revoked" },
         { status: 401 }
       );
     }
 
-    // 5. Check if the token entry is expired
-    if (new Date(tokenEntry.expires) < new Date()) {
-      await RefreshToken.findByIdAndDelete(tokenEntry._id);
+    const { decision, cap } = classifyRefreshRow(row);
+
+    if (decision === "expired") {
+      await revokeFamily(row.family);
+      await RefreshToken.findByIdAndDelete(row._id);
       return NextResponse.json(
         { error: "Unauthorized: Token expired" },
         { status: 401 }
       );
     }
 
-    // 6. Get user details
     const user = await User.findById(payload.userId);
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // 7. Issue a new access token
-    const newAccessToken = generateAccessToken({
-      userId: user._id,
-      email: user.email,
+    const newAccessToken = () =>
+      generateAccessToken({ userId: String(user._id), email: user.email });
+
+    // The losing tab: hand back an access token but do NOT rotate and do NOT
+    // touch the cookie — the winner already replaced it.
+    if (decision === "grace") {
+      return NextResponse.json(
+        { accessToken: newAccessToken() },
+        { status: 200 }
+      );
+    }
+
+    if (decision === "reuse") {
+      const revoked = await revokeFamily(row.family);
+      console.warn(
+        "[AUTH_REFRESH] Refresh-token reuse detected; revoked session family.",
+        { user: String(user._id), revoked }
+      );
+      return NextResponse.json(
+        { error: "Unauthorized: Token has been revoked" },
+        { status: 401 }
+      );
+    }
+
+    const { token: nextToken, jti: nextJti } = generateRefreshToken({
+      userId: String(user._id),
     });
 
-    return NextResponse.json({ accessToken: newAccessToken }, { status: 200 });
+    // Atomic compare-and-set: whoever flips usedAt first owns the rotation.
+    const claimed = await RefreshToken.findOneAndUpdate(
+      { _id: row._id, usedAt: null },
+      { usedAt: new Date(), replacedBy: nextJti }
+    );
+    if (!claimed) {
+      // Lost the race to a concurrent refresh — same situation as the grace path.
+      return NextResponse.json(
+        { accessToken: newAccessToken() },
+        { status: 200 }
+      );
+    }
+
+    await RefreshToken.create({
+      user: user._id,
+      jti: nextJti,
+      family: row.family,
+      expires: cap,
+      absoluteExpiresAt: cap,
+    });
+
+    await setSessionCookie(nextToken, cap);
+
+    return NextResponse.json({ accessToken: newAccessToken() }, { status: 200 });
   } catch (error) {
-    // *** FIX: Removed the "Opening" typo ***
     console.error("[AUTH_REFRESH_ERROR]", error);
     return NextResponse.json(
       { error: "Internal Server Error" },

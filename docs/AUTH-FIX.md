@@ -20,6 +20,7 @@ is easy to tell apart from closed work at a glance.
 | 4 | **F22** | `deleteMany` → `create` in login was not atomic | ✅ Dissolved by the F10 fix |
 | 5 | **F18** | Auth boilerplate duplicated across ~15 route handlers | ✅ Fixed |
 | 5 | **F21** | Revocation lagged up to 15 minutes | ✅ Fixed for global revocation |
+| 6 | **F4** | No refresh-token rotation or reuse detection | ✅ Fixed |
 
 ---
 
@@ -532,3 +533,150 @@ Narrow `.select()` projections in `vault`, `analytics` and `admin/analytics`
 were dropped in favour of the full document. Mixing `+password` with an
 inclusion projection is a Mongoose footgun, and the saving was negligible on a
 single document.
+
+---
+
+## 6 — F4 · Refresh-token rotation with reuse detection
+
+**Files:** [`app/api/auth/refresh/route.ts`](../app/api/auth/refresh/route.ts),
+[`models/RefreshToken.ts`](../models/RefreshToken.ts),
+[`lib/session.ts`](../lib/session.ts)
+
+### The issue
+
+One refresh token served a session for its entire 30-day life. A stolen token
+was therefore valid for 30 days, and — the part that matters — its use was
+**indistinguishable from the legitimate user's**. Nothing could ever notice.
+
+The review called this "the biggest security win of the model, entirely
+unrealised" (§7.4 row 5).
+
+### The fix
+
+Every refresh now mints a **new** refresh token with a new `jti` and retires the
+old row. Four fields were added to `RefreshToken`:
+
+| Field | Purpose |
+| --- | --- |
+| `family` | uuid, constant across every rotation of one login |
+| `usedAt` | `null` = live; set = consumed |
+| `replacedBy` | the `jti` that superseded it |
+| `absoluteExpiresAt` | hard cap, copied forward, **never** extended |
+
+`family` deliberately stays **out of the JWT** — it is read off the row — so the
+token shape and the F8 guard are untouched.
+
+#### Retiring, not deleting
+
+Deleting the old row would make a replayed token look identical to a random
+invalid one, so reuse *detection* would not exist. Rows are marked `usedAt`
+instead, which gives four distinguishable outcomes:
+
+| Row state | Meaning | Response |
+| --- | --- | --- |
+| no row | unknown/revoked token | `401` |
+| past `absoluteExpiresAt` | session hit its hard cap | revoke family, `401` |
+| `usedAt: null` | live | **rotate** |
+| `usedAt` set, inside grace | losing tab of a concurrent refresh | access token only |
+| `usedAt` set, outside grace | **reuse — theft** | revoke family, `401` |
+
+#### Detection revokes the family, not every session
+
+A stolen token belongs to one lineage. Killing all of a user's sessions would
+mean a single false positive signs them out everywhere, and buys nothing against
+the actual threat — other families would require a separate credential
+compromise. This matches RFC 9700. `sessionsRevokedAt` is deliberately **not**
+stamped, so the thief's current access token survives up to 15 minutes; that is
+the same accepted limitation recorded in F21. One line to change if a harsher
+policy is ever wanted.
+
+#### The multi-tab trap
+
+Two tabs share one cookie jar, so both can refresh with the same token. The
+loser arrives holding a token the winner just consumed — identical to reuse.
+Untreated, ordinary two-tab browsing fires the theft alarm and logs the user
+out at random.
+
+Within **60 seconds** of `usedAt`, a consumed token returns a fresh access token
+but does **not** rotate and does **not** touch the cookie — the winner already
+replaced it. The window is deliberately generous: a false theft alarm costs a
+logout, a slightly wider replay window costs very little, and the grace path
+issues **no refresh token**, so a thief cannot gain persistence through it.
+
+The consume step is an atomic compare-and-set:
+
+```ts
+findOneAndUpdate({ _id: row._id, usedAt: null }, { usedAt: now, replacedBy: nextJti })
+```
+
+so two simultaneous refreshes cannot both rotate. Losing that race falls into
+the same grace path.
+
+#### The two-clock problem
+
+Without a cap, rotation slides `expires` forward on every use and any user who
+returns within the window is **never** logged out — "30 days" quietly means
+"forever." `absoluteExpiresAt` is set once at login and copied forward
+unchanged; refresh rejects on it even when the sliding window is open.
+
+**No sliding idle window in v1.** Per AUTHENTICATION §9.1 the idle TTL is
+explicitly v2 work, so `expires` and `absoluteExpiresAt` are equal for now. v2
+gives `expires` a shorter sliding value and the cap keeps meaning what it says.
+`rememberMe` is **not** added here — v2 adds it beside these fields without
+reshaping the row.
+
+#### Legacy rows
+
+Rows written before this change have no `family`, `usedAt` or
+`absoluteExpiresAt`. The cap falls back to `row.expires`, which for them is
+already login + 30 days — exactly right. `{ usedAt: null }` matches a missing
+field in MongoDB, so they read as live and rotate normally on first use.
+
+`revokeFamily()` is guarded against a non-string family, because
+`deleteMany({ family: undefined })` serialises to `{ family: null }` and would
+match **every legacy row for every user**. That is the same footgun analysed
+under F1.
+
+### Verification
+
+`npx tsc --noEmit` clean; `npx next build` compiles. The state machine was
+extracted into a pure `classifyRefreshRow()` so the **real** function could be
+tested rather than a re-implementation:
+
+| Case | Decision |
+| --- | --- |
+| Live row, cap ahead | `rotate` |
+| **Cap passed, `expires` still ahead** | **`expired`** — the two-clock guarantee |
+| Cap ahead, `expires` passed | `rotate` — the cap is authoritative |
+| Consumed 1s ago | `grace` |
+| Consumed exactly at the boundary | `grace` |
+| Consumed 1ms past the boundary | `reuse` |
+| Consumed 1 hour ago | `reuse` |
+| Legacy row, no cap, `expires` ahead | `rotate` |
+| Legacy row, `expires` passed | `expired` via fallback |
+| Legacy cap value | falls back to `expires` |
+
+`revokeFamily()` was separately confirmed to short-circuit on `undefined`,
+`null`, `""`, `0` and `{}` without issuing a query.
+
+**Not exercised against a live database.** The classifier is genuinely tested,
+but the surrounding I/O is not: that the compare-and-set actually serialises two
+concurrent writers, that the new row is created with the right family, and that
+`deleteMany({ family })` removes the expected lineage are all reasoned from the
+code. **This is the change most in need of a real smoke test** — specifically
+two tabs refreshing at once, which must not log the user out.
+
+### Blast radius
+
+Every refresh now performs **writes** (one update, one insert) where it
+previously performed two reads, and re-issues the cookie each time. No client
+change was needed — the browser applies `Set-Cookie` on the same-origin refresh
+call automatically.
+
+Row count per active session stays at one live row plus its retired
+predecessors, which the TTL index sweeps when the family's cap passes.
+
+A consequence worth stating plainly: **a refresh token is now single-use.** Any
+client that replayed one — a stale service worker, a restored tab, a copied
+cookie — will now trip the grace window and, past 60 seconds, be treated as
+theft.
