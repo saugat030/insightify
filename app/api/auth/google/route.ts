@@ -44,12 +44,26 @@ export async function POST(req: Request) {
       name,
       picture,
       sub: googleId,
+      email_verified: googleEmailVerified,
     } = payload;
 
     if (!email) {
       return NextResponse.json(
         { error: "Google account does not have an email" },
         { status: 400 }
+      );
+    }
+
+    // Without this an unverified Google address could claim a matching account.
+    if (googleEmailVerified !== true) {
+      return NextResponse.json(
+        {
+          error:
+            "Your Google account's email address is not verified. " +
+            "Verify it with Google, then try again.",
+          code: "GOOGLE_EMAIL_UNVERIFIED",
+        },
+        { status: 403 }
       );
     }
 
@@ -66,18 +80,36 @@ export async function POST(req: Request) {
         googleId: googleId,
         profilePicture: picture || null,
         role: "user",
+        // Google just proved ownership of this address in the ID token.
+        emailVerified: true,
       });
       await user.save();
-    } else {
-      // If user exists but doesn't have googleId yet, we link them
-      if (!user.googleId) {
-        user.googleId = googleId;
-        // Optional: update picture if they don't have one
-        if (!user.profilePicture && picture) {
-          user.profilePicture = picture;
-        }
-        await user.save();
+    } else if (!user.googleId) {
+      // Linking onto an existing account requires that account to have proved
+      // the address too, otherwise whoever registered it first captures the
+      // session. Password accounts stay unverified until the v2 OTP flow.
+      if (!user.emailVerified) {
+        return NextResponse.json(
+          {
+            error:
+              "An account with this email already exists. " +
+              "Please sign in with your password.",
+            code: "PASSWORD_ACCOUNT_EXISTS",
+          },
+          { status: 409 }
+        );
       }
+
+      user.googleId = googleId;
+      // Optional: update picture if they don't have one
+      if (!user.profilePicture && picture) {
+        user.profilePicture = picture;
+      }
+      await user.save();
+    } else if (!user.emailVerified) {
+      // Already linked, but predates this check — record the proof Google gave.
+      user.emailVerified = true;
+      await user.save();
     }
 
     // same session issuer the password flow uses, so the two cannot drift

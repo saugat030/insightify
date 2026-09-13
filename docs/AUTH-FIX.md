@@ -13,6 +13,7 @@ is easy to tell apart from closed work at a glance.
 | 1 | **F8** | `verifyAccessToken` casts instead of validating | ✅ Fixed |
 | 2 | **F1** | Google OAuth issued tokens with the wrong claim shape | ✅ Fixed |
 | 2 | **F11** | Cookie flags differed between the two login paths | ✅ Fixed — fell out of F1 |
+| 3 | **F2** | Google account linking did not check `email_verified` | ✅ Fixed (stage 1 of 2 — see entry) |
 
 ---
 
@@ -189,3 +190,99 @@ The password flow is behaviourally identical apart from the code now living in
 flow changes from broken to correct, but **remains untestable end to end** until
 F3 is resolved, so it is verified at the unit level only and should be treated
 as unproven against a live Google response.
+
+---
+
+## 3 — F2 · Google account linking did not check `email_verified`
+
+**Files:** [`app/api/auth/google/route.ts`](../app/api/auth/google/route.ts),
+[`models/User.ts`](../models/User.ts)
+
+### The issue
+
+The route destructured `email`, `name`, `picture` and `sub` from the verified ID
+token and ignored `email_verified` entirely, then linked `googleId` onto any
+existing account matching the email. That is the classic pre-account-takeover
+linking vector: obtain an ID token for an unverified address that matches a
+password account, and the flow grants full access with no proof of the password.
+
+**F2 has a second direction the original review did not record.** Checking
+`email_verified` alone does *not* close it, because the local side of the email
+match is unproven too — `register` never verifies email ownership:
+
+1. Attacker registers a password account for `victim@gmail.com`. The app accepts
+   it; nothing checks the address.
+2. Victim clicks "Sign in with Google". Google legitimately reports
+   `email_verified: true`.
+3. The route finds the existing account and links `googleId` onto it.
+4. The victim is now working inside an account whose password the attacker
+   chose, and the attacker can sign into it whenever they like.
+
+`email_verified` is `true` at every step. The check passes and the takeover
+still happens. What is actually required is proof from *both* sides.
+
+### The fix — stage 1 of 2
+
+New field on `User`:
+
+```
+emailVerified: Boolean (default false)
+```
+
+Google sign-ups set it `true` — the ID token is Google's proof. Password
+sign-ups stay `false`, because nothing proves the address yet. Three rules in
+the Google route follow from it:
+
+| Situation | Behaviour |
+| --- | --- |
+| `email_verified !== true` | `403 GOOGLE_EMAIL_UNVERIFIED` — refuse before touching the DB |
+| No account for this email | Create it with `emailVerified: true` |
+| Account exists, no `googleId`, `emailVerified: false` | `409 PASSWORD_ACCOUNT_EXISTS` — refuse to link |
+| Account exists, no `googleId`, `emailVerified: true` | Link `googleId`, sign in |
+| Account already has `googleId` | Sign in; backfill `emailVerified` if unset |
+
+Both error messages reach the user verbatim — `useAuth.googleLogin` rethrows
+`response.data.error` and the login and register pages render it.
+
+Because every existing password account is `emailVerified: false`, the practical
+effect **today** is that Google sign-in never links onto a password account. That
+is intended, and it is why this is stage 1 rather than the whole fix.
+
+### Why this is not throwaway work
+
+Stage 2 is the **v2 OTP flow** (see
+[AUTHENTICATION §9.2](./AUTHENTICATION.md#92-email-verification-otp--v2)), which
+sets `emailVerified: true` once the user enters a code sent to their inbox.
+
+When it lands, **none of the rules above change.** They already read
+`emailVerified`. Verified accounts simply begin auto-linking; accounts that have
+not verified keep receiving the `409`. The condition goes from "always refuse"
+to "refuse only unverified" without the Google route being touched again.
+
+### Verification
+
+`npx tsc --noEmit` clean; `npx next build` compiles. Field defaults checked
+against the real `models/User.ts`:
+
+| Constructed as | `emailVerified` |
+| --- | --- |
+| Password signup | `false` |
+| Google signup (as the route builds it) | `true` |
+| Legacy document predating the field | `false` |
+
+So both the password path and every pre-existing document are refused for
+linking, which is the intent.
+
+**Not verified end to end.** `GOOGLE_CLIENT_SECRET` is unset in development
+(F3), so `getToken(code)` still fails before any of this runs. The branch
+behaviour above is read off the code and the schema defaults are tested; the
+live Google response is not exercised. Treat it as unproven until the secret is
+configured in an environment where it can be exercised.
+
+### Blast radius
+
+The password flow is untouched. New Google users sign up normally. Existing
+Google-linked users sign in normally and get `emailVerified` backfilled. The one
+behaviour change is that a user who registered with a password and then clicks
+"Sign in with Google" now gets a clear error instead of being silently linked —
+correct until their address is proven, and self-resolving once OTP ships.

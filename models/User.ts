@@ -35,6 +35,13 @@ const UserSchema = new Schema({
     lowercase: true,
     trim: true,
   },
+  // Has the owner proved they control this address? Google sign-ups set this
+  // from the verified ID token; password sign-ups stay false until the v2 OTP
+  // flow lands. Gates Google account linking — see docs/AUTH-FIX.md §3.
+  emailVerified: {
+    type: Boolean,
+    default: false,
+  },
   // 1. CHANGED: Password is no longer strictly required for Google users
   password: {
     type: String,

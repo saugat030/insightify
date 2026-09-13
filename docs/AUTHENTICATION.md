@@ -8,8 +8,9 @@
 - **Audience:** developers working on auth, and anyone assessing security posture
 - **Status of the code at time of writing:** password flow solid; **Google OAuth
   was broken** (F1) — ~~see [§7.1](#71-critical)~~ **now fixed**, though Google
-  sign-in still cannot run at all until `GOOGLE_CLIENT_SECRET` is set (F3), and
-  **must not be enabled before F2 lands** (see the warning in §7.1)
+  sign-in still cannot run in *development* until `GOOGLE_CLIENT_SECRET` is set
+  (F3 — an environment matter, expected to be present in production). F2 has
+  since landed, so enabling Google is no longer blocked on it.
 - **Fix log:** [`AUTH-FIX.md`](./AUTH-FIX.md) — findings are worked through one
   at a time and recorded there in the order they were fixed. A finding marked
   **✅ Fixed** below is closed; everything unmarked is still open.
@@ -29,8 +30,13 @@
 6. [Route protection](#6-route-protection)
 7. [Review: findings](#7-review-findings) — incl. [7.4 Architectural assessment](#74-architectural-assessment-is-the-split-token-model-earning-its-keep)
 8. [What is done well](#8-what-is-done-well)
-9. [Recommendations, prioritised](#9-recommendations-prioritised)
+9. [Recommendations, prioritised](#9-recommendations-prioritised) — incl.
+   [9.1 Remember me](#91-designing-remember-me-under-option-a) and
+   [9.2 Email verification (OTP)](#92-email-verification-otp--v2), the two **v2** items
 10. [Endpoint reference](#10-endpoint-reference)
+
+> **Fix log:** closed findings are marked ✅ here and written up in
+> [`AUTH-FIX.md`](./AUTH-FIX.md). Fixed so far: **F8**, **F1**, **F11**, **F2**.
 
 ---
 
@@ -92,12 +98,17 @@ stateless JWT scheme cannot do.
 ### `User`
 
 ```
-username, email (unique, lowercased), password (bcrypt, select:false),
+username, email (unique, lowercased), emailVerified (Boolean, default false),
+password (bcrypt, select:false),
 googleId (unique, sparse), profilePicture, role ("admin" | "user"),
 tier ("free" | "pro"), linksCreatedCount, lastResetDate, createdAt,
 vaultEnabled, vaultSalt, vaultKdf, vaultVerifier      ← see ENCRYPTED_VAULT.md
 ```
 
+- `emailVerified` records whether the owner has *proved* they control the
+  address. Google sign-ups set it `true` (the ID token is Google's proof);
+  password sign-ups stay `false` until the v2 OTP flow ([§9.2](#92-email-verification-otp--v2))
+  lands. It gates Google account linking — see [F2](#-f2--google-account-linking-does-not-check-email_verified--fixed).
 - `password` is **not required** when `googleId` is present, so Google-only
   accounts have no password at all.
 - `password` uses `select: false` — it is never returned unless a query
@@ -250,7 +261,9 @@ POST /api/auth/google { code }
   ├─ verifyIdToken({ idToken, audience })
   ├─ find user by email
   │    ├─ none  -> create { username, email, googleId, profilePicture }
-  │    └─ exists-> link googleId onto the existing account   ← F2 still OPEN
+  │    ├─ email_verified !== true          -> 403  (F2, fixed)
+  │    └─ exists-> link only if that account's emailVerified is true,
+  │                otherwise 409            (F2, fixed)
   └─ issueSession(user)        ← the SAME issuer the password flow uses
 ```
 
@@ -365,9 +378,9 @@ authenticated), but it does mean the page shell renders before redirecting.
 > [AUTH-FIX §2](./AUTH-FIX.md#2--f1--google-oauth-issued-tokens-with-the-wrong-claim-shape).
 > The analysis below is retained as the record of what was wrong.
 >
-> ⚠️ **Fixing F1 made F2 live.** While Google sign-in was broken, the
-> unverified-email linking vector was unreachable. It is now reachable the
-> moment `GOOGLE_CLIENT_SECRET` is set. **Do not set it until F2 lands.**
+> ✅ **The F2 warning that stood here is discharged.** Fixing F1 made the
+> unverified-email linking vector reachable; F2 has since been fixed, so setting
+> `GOOGLE_CLIENT_SECRET` is no longer gated on it.
 
 `app/api/auth/google/route.ts` hand-rolls its JWTs instead of using
 `lib/auth.ts`, and uses different claim names:
@@ -418,7 +431,22 @@ do not — this is a **broken flow, not a bypass**.
 > but the F8 fix removes the dependency on it: a Google-shaped token is now
 > rejected before any query is built.
 
-#### F2 — Google account linking does not check `email_verified`
+#### ✅ F2 — ~~Google account linking does not check `email_verified`~~ — FIXED (stage 1 of 2)
+
+> **Fixed.** The route now refuses an unverified Google address outright, and
+> refuses to link onto an existing account that has not proved the address
+> itself. See [AUTH-FIX §3](./AUTH-FIX.md#3--f2--google-account-linking-did-not-check-email_verified).
+> The analysis below is retained as the record of what was wrong.
+>
+> **A second direction, not in the original review.** Checking `email_verified`
+> alone does not close F2, because `register` never verifies email ownership
+> either. An attacker can register a password account for `victim@gmail.com`
+> first; when the victim later signs in with Google — legitimately
+> `email_verified: true` — the flow links onto the attacker's account and the
+> victim ends up inside an account whose password the attacker chose. Proof is
+> needed from *both* sides, which is why the fix adds an `emailVerified` field
+> rather than only reading Google's claim. Stage 2 is the
+> [v2 OTP flow](#92-email-verification-otp--v2).
 
 ```ts
 const { email, name, picture, sub: googleId } = payload;
@@ -432,11 +460,10 @@ without any proof of the password. This is the classic pre-account-takeover
 linking vector. Google normally only issues verified emails for consumer
 accounts, but the claim exists precisely so relying parties check it.
 
-> ⚠️ **Escalated by the F1 fix.** This was previously moot — the Google flow was
-> broken end to end, so nothing could reach the linking code. With F1 fixed, the
-> only remaining thing standing between this and a live pre-account-takeover
-> vector is F3 (the missing `GOOGLE_CLIENT_SECRET`). **F2 must land before that
-> secret is configured.** It is the next fix.
+> ✅ **Resolved.** This finding was escalated by the F1 fix (the linking code
+> became reachable) and has now been fixed in turn. Note the practical effect
+> today: since every password account is `emailVerified: false`, Google sign-in
+> never links onto one. That relaxes on its own once the v2 OTP flow ships.
 
 #### F3 — `GOOGLE_CLIENT_SECRET` is not configured
 
@@ -628,8 +655,14 @@ These are deliberate, correct choices and should be preserved:
    "issue a session" function was extracted — `issueSession()` in
    [`lib/session.ts`](../lib/session.ts) — so the two paths cannot drift again.
    See [AUTH-FIX §2](./AUTH-FIX.md#2--f1--google-oauth-issued-tokens-with-the-wrong-claim-shape).
-2. **Check `email_verified` (F2)** before creating *or linking* a Google account.
-   Refuse, or require a password challenge, when linking to an existing account.
+2. ✅ **DONE — Check `email_verified` (F2)** ~~before creating *or linking* a
+   Google account. Refuse, or require a password challenge, when linking to an
+   existing account.~~ Unverified Google addresses are refused (`403`), and
+   linking onto an existing account is refused (`409`) unless that account's own
+   `emailVerified` is true. A password challenge was considered and rejected in
+   favour of the `emailVerified` flag, which the v2 OTP flow
+   ([§9.2](#92-email-verification-otp--v2)) sets without any extra UI.
+   See [AUTH-FIX §3](./AUTH-FIX.md#3--f2--google-account-linking-did-not-check-email_verified).
 3. ✅ **DONE — Validate token payload shape at runtime (F8)** — ~~have
    `verifyAccessToken` return `null` unless `userId` is a non-empty string.~~
    Both verifiers now reject any payload whose claims are the wrong shape.
@@ -750,6 +783,11 @@ control. The load-bearing piece is an absolute cap.**
 
 #### 🔜 Deferred to v2
 
+> **v2 carries two pieces of work, and they ship together:** the server-enforced
+> "remember me" below, and **email verification by OTP**
+> ([§9.2](#92-email-verification-otp--v2)), which is stage 2 of the F2 fix.
+> They are independent in mechanism but share a release.
+
 Proper enforcement of "don't remember me", to be designed then:
 
 - A **server-side idle TTL, slid on use**, *paired with an absolute cap* — the
@@ -830,6 +868,59 @@ all *plaintext* links and documents.
 
 ---
 
+### 9.2 Email verification (OTP) — v2
+
+**Status: deferred to v2, alongside the server-enforced "remember me" in
+[§9.1](#91-designing-remember-me-under-option-a).** This is **stage 2 of the F2
+fix**; stage 1 shipped (see [AUTH-FIX §3](./AUTH-FIX.md#3--f2--google-account-linking-did-not-check-email_verified)).
+
+#### Why it is needed
+
+`register` accepts any email address without proving the registrant controls it.
+That is the root cause behind the second direction of
+[F2](#-f2--google-account-linking-does-not-check-email_verified--fixed): the
+local side of an email match is unproven, so Google's verified claim is not
+enough on its own to make auto-linking safe.
+
+Stage 1 handles this by refusing to link onto any account with
+`emailVerified: false` — which today means *every* password account. OTP is what
+makes that flag reachable for password users, at which point the refusal relaxes
+by itself. **No change to the Google route is required when this lands.**
+
+It also pays down two other findings:
+
+- **F7 (user enumeration)** — `register` can stop returning `409 "Email already
+  in use"` and respond identically either way, because the real signal goes to
+  the inbox instead of the HTTP response.
+- **Password reset**, which the app does not have at all, needs exactly the same
+  mail infrastructure.
+
+#### Decided
+
+| Question | Decision |
+| --- | --- |
+| OTP code or magic link? | **OTP code.** Better on mobile than switching apps to click a link. |
+| Existing accounts | **Force verification**, not grandfathered — grandfathering would keep the hole open permanently for the oldest accounts. Low cost here: at time of writing all accounts are the developer's own test accounts. |
+| Mail provider | **Resend.** Credentials not yet issued. |
+
+#### Scope
+
+Not a small change, which is why it is not part of the F2 fix:
+
+- Mail provider wired up — API key in env, and SPF/DKIM on the sending domain or
+  the mail lands in spam.
+- Schema: hashed OTP, expiry, and an **attempt counter**.
+- Endpoints: `verify-otp`, `resend-otp`.
+- A verify step in the registration flow, plus resend handling.
+- **Attempt limiting is mandatory, not optional.** A 6-digit code is a 10⁶
+  space; with unlimited guesses it falls in minutes. Since
+  [F6](#72-important) (no rate limiting) is still open, this work must ship its
+  own per-account attempt cap or the OTP is decorative.
+- `login` must decide what an unverified account may do — refuse outright, or
+  allow a restricted session. Otherwise verification is cosmetic.
+
+---
+
 ## 10. Endpoint reference
 
 | Method & path | Auth required | Body | Success | Failure modes |
@@ -839,7 +930,7 @@ all *plaintext* links and documents.
 | `POST /api/auth/refresh` | cookie | — | `200 {accessToken}` | `401` absent/invalid/revoked/expired · `404` user gone |
 | `POST /api/auth/logout` | cookie (optional) | — | `200 {message}` | always clears the cookie |
 | `GET /api/auth/me` | Bearer | — | `200 <user minus password>` | `401` · `404` |
-| `POST /api/auth/google` | — | `{code}` | `200 {accessToken, user}` + cookie | `400` no code/payload · `500` exchange failed |
+| `POST /api/auth/google` | — | `{code}` | `200 {accessToken, user}` + cookie | `400` no code/payload · `403` `GOOGLE_EMAIL_UNVERIFIED` · `409` `PASSWORD_ACCOUNT_EXISTS` · `500` exchange failed |
 | `POST /api/auth/change-password` | Bearer | `{oldPassword, newPassword}` | `200 {success}` | `400` short · `401` bad old password · `404` |
 
 ### Environment variables
