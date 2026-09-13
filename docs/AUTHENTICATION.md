@@ -20,9 +20,9 @@
 2. [Components & files](#2-components--files)
 3. [Data model](#3-data-model)
 4. [Token design](#4-token-design)
-5. [The flows](#5-the-flows)
+5. [The flows](#5-the-flows) — incl. [5.9 Session lifecycle across devices](#59-session-lifecycle-across-devices)
 6. [Route protection](#6-route-protection)
-7. [Review: findings](#7-review-findings)
+7. [Review: findings](#7-review-findings) — incl. [7.4 Architectural assessment](#74-architectural-assessment-is-the-split-token-model-earning-its-keep)
 8. [What is done well](#8-what-is-done-well)
 9. [Recommendations, prioritised](#9-recommendations-prioritised)
 10. [Endpoint reference](#10-endpoint-reference)
@@ -213,6 +213,20 @@ any 401 (except on /auth/me,/login,/register,/refresh)
 The shared `tokenRefreshPromise` means ten concurrent 401s trigger **one**
 refresh, not ten.
 
+#### Why those four paths are skipped
+
+The inline comment says "prevent infinite loops", but that is only accurate for
+one of them. Loops are already prevented by `_retry` (one attempt per request)
+and by `refreshAccessToken()` using bare `axios`, which never re-enters the
+interceptor. The four entries are actually doing different jobs:
+
+| Skipped path | Real reason |
+| --- | --- |
+| `/api/auth/refresh` | `loadUserOnMount` calls it *through* `axiosInstance`, so an anonymous visitor's ordinary 401 would fire a second, redundant refresh and then the logout event. |
+| `/api/auth/me` | **Only ever called immediately after a successful refresh** (`useAuth.tsx`), so the token is milliseconds old — a 401 there cannot be staleness, and a retry would mint an identical token and fail identically. An optimisation, not a loop guard. A 401 here means something genuinely broken (a deleted user returns **404**, not 401), so failing fast is correct. |
+| `/api/auth/login` | 401 means bad credentials; refreshing is meaningless and would mask the error from the form. |
+| `/api/auth/register` | **Dead entry** — the route returns 201/400/409 and never 401. |
+
 ### 5.6 Logout
 
 ```
@@ -246,6 +260,67 @@ POST /api/auth/change-password { oldPassword, newPassword }   (Bearer required)
   ├─ comparePassword(oldPassword)          -> 401 if wrong
   └─ user.password = newPassword; save()   (hook re-hashes)
 ```
+
+---
+
+### 5.9 Session lifecycle across devices
+
+Because `login` runs `RefreshToken.deleteMany({ user })` **before** creating its
+own row, at most one refresh-token row can exist per user. The system is
+therefore **effectively single-session**, though nothing in the UI says so.
+
+#### Logging in on a second device
+
+| Step | `refreshtokens` rows | Device A | Device B |
+| --- | --- | --- | --- |
+| A logs in | `jti_A` | working | — |
+| B logs in | `jti_A` **deleted**, `jti_B` created | **orphaned** — its cookie references a row that no longer exists | working |
+| next 0–15 min | `jti_B` | **still fully working** — the access token is stateless and never checked against the DB | working |
+| A's access token expires, or A reloads | `jti_B` | refresh → `findOne({jti_A})` → no match → `401` → cleared, `RoleGuard` redirects to `/login` | working |
+
+Two consequences:
+
+1. **Revocation is not immediate.** For up to 15 minutes (the access-token TTL)
+   device A can still read *and mutate* data with a token that is conceptually
+   revoked. This is inherent to stateless access tokens — see
+   [§7.4](#74-architectural-assessment-is-the-split-token-model-earning-its-keep).
+2. **It is silent.** Device A is given no indication; it simply breaks later.
+
+This applies to two browsers on one machine, and to a normal + private window —
+each has its own cookie jar and so counts as a separate device.
+
+Related wrinkles:
+
+- Device A's dead cookie remains for 30 days. `middleware.ts` checks only cookie
+  *presence*, so A can navigate to `/dashboard`, pass the edge check, render the
+  shell, and only then be bounced by `RoleGuard`.
+- **The Google route behaves differently** — it never imports `RefreshToken`, so
+  it neither clears existing sessions nor registers its own (F1). Moot while
+  Google is broken, but the inconsistency must be resolved in the same pass.
+
+#### Logging out of one device
+
+Logout is **correctly scoped** — it removes only the `jti` carried in that
+browser's own cookie, and clears only that browser's cookie:
+
+```ts
+await RefreshToken.deleteOne({ jti: payload.jti });
+cookieStore.delete("refreshToken");
+```
+
+| Action | Effect |
+| --- | --- |
+| Log out on the newest device (B) | Deletes `jti_B`, the only surviving row. A was already orphaned → everything signed out. |
+| Log out on the older, orphaned device (A) | `deleteOne({jti_A})` matches nothing (already gone); only A's cookie is cleared. **B is unaffected and stays signed in.** |
+
+So logout never over-reaches. **The asymmetry is that login over-reaches and
+logout does not** — the opposite of what you would want.
+
+Gaps this exposes: there is **no "sign out everywhere"** (with only one row
+possible, there is nothing to enumerate), and password change revokes nothing
+(F5). Also, `deleteMany` → `create` are two separate awaits with no transaction,
+so two simultaneous logins can interleave and briefly leave two rows, or have
+one clobber the other.
 
 ---
 
@@ -341,6 +416,7 @@ current environment the Google exchange fails before any of F1/F2 matters.
 | **F7** | **User enumeration.** `register` returns `409 "Email already in use"`; `login` runs bcrypt only when the user exists, so response timing differs measurably. | Lets an attacker build a list of valid accounts before attacking them. |
 | **F8** | **`verifyAccessToken` casts instead of validating.** | This is the *root cause* that let F1 ship silently. A runtime shape check would have failed loudly. |
 | **F9** | **Middleware covers only 4 route patterns**; `/editor`, `/links`, `/settings`, `/media`, `/admin/*` rely on client-side `RoleGuard`. | Not a data leak (APIs are enforced) but inconsistent, and it lets private shells paint before redirecting. |
+| **F19** | **The split-token architecture is not banking its own benefits** — full audit in [§7.4](#74-architectural-assessment-is-the-split-token-model-earning-its-keep). **Resolved as a decision (Option A); remains open as work.** | The design pays the full complexity cost of two token types, an interceptor, refresh dedupe and a bootstrap round-trip, while realising only ~2 of its ~6 advantages. Not a defect to fix on its own — it is the *framing* for F1, F4, F5, F10 and F21: completing those is what makes the split earn its keep. |
 
 ### 7.3 Moderate / hygiene
 
@@ -355,6 +431,98 @@ current environment the Google exchange fails before any of F1/F2 matters.
 | **F16** | **`middleware.ts` is deprecated in Next 16** — logs a warning on every boot; should become `proxy.ts`. |
 | **F17** | **`/api/auth/me` returns the whole user document** (minus password), including `googleId`, `vaultSalt`, `vaultVerifier`. All safe by design, but broader than needed. |
 | **F18** | **Auth boilerplate is duplicated in ~15 route handlers** rather than shared in one helper — the kind of drift that produced F1. |
+| **F20** | **There is no "sign out of all devices".** Because `login`'s `deleteMany` guarantees at most one row per user, there is nothing to enumerate, so a global sign-out is not expressible today. See [§5.9](#59-session-lifecycle-across-devices). |
+| **F21** | **Revocation has an up-to-15-minute lag.** Revoking a session deletes the allow-list row, but the already-issued access token stays valid until it expires, since it is never checked against the DB. Inherent to stateless access tokens; mitigable by shortening the TTL. |
+| **F22** | **`deleteMany` → `create` in `login` is not atomic** (two separate awaits, no transaction). Two simultaneous logins can interleave and briefly leave two rows, or have one clobber the other. |
+| **F23** | **No "remember me" — and no way to opt out of being remembered.** `login` hardcodes `REFRESH_TOKEN_EXPIRATION_DAYS = 30` and always sets a *persistent* cookie, so every sign-in (including on a shared or public machine) persists for 30 days. **v1: cookie-only opt-out** (session cookie when unchecked); **server-enforced expiry deferred to v2.** See [§9.1](#91-designing-remember-me-under-option-a). |
+| **F24** | **Operational note, not a vulnerability — no signing-key rotation support.** `JWT_SECRET` / `JWT_REFRESH_SECRET` are single static values with no `kid` claim and no multi-key verification, so rotating either logs every user out at once. Only relevant for *mundane* rotation (e.g. someone with env access leaves). **Explicitly not a threat model:** secret compromise is not a scenario this design should be expected to mitigate — `MONGODB_URI` lives in the same `.env.local`, so anything that leaks the signing key also surrenders the database, and an attacker who owns the datastore can read everything and insert their own session rows regardless of architecture. Revocation is meaningless when the attacker controls the revocation table. (Minor asymmetry: Atlas is IP-allowlisted, so the DB URI carries a network-level second factor the signing key does not — but the correct response to a leaked key is still rotate-and-force-relogin.) |
+| **F25** | **The interceptor's `/api/auth/me` skip is implicitly coupled to a single call site.** It is correct only because `/me` is called exactly once, immediately after a successful refresh. Nothing documents or enforces that. Add a `/me` call anywhere else — a profile re-fetch, a settings reload — and past the 15-minute access-token window it will 401 and **fail hard instead of transparently recovering**, with a non-obvious cause. Since `_retry` already prevents loops, prefer narrowing the skip-list to `/refresh` + `/login` (dropping `/me` and the dead `/register` entry), or comment the assumption explicitly. Minor related wart: `_retry` is set *before* the skip-list check, so skipped requests are marked retried despite never being retried. |
+
+---
+
+### 7.4 Architectural assessment: is the split-token model earning its keep?
+
+A split access/refresh design is not free — it costs two token types, two
+secrets, a response interceptor with retry, refresh de-duplication, a
+bootstrap round-trip on every page load, an event bus for refresh failure, and a
+server-side allow-list. That cost is worth paying **only if the resulting
+advantages are actually realised.** Audited one by one:
+
+| # | Advantage of split-token | Realised here? | Notes |
+| --- | --- | --- | --- |
+| 1 | Short-lived access token limits the value of a leak | ✅ **Yes** | 15 minutes. Genuine. |
+| 2 | Long-lived credential is `httpOnly`, so XSS cannot steal it | ✅ **Yes** | The single most valuable property, and it is correctly implemented. |
+| 3 | Server-side revocation (which stateless JWT alone cannot do) | 🟡 **Partly** | The allow-list works, but revocation lags by up to the access-token TTL (F21), and only for the password flow (F1). |
+| 4 | Stateless auth — no DB round-trip per request | ❌ **No** | Nearly every protected route immediately calls `User.findById(payload.userId)`, so a DB hit happens anyway. The statelessness is paid for but not banked. |
+| 5 | Rotation + reuse detection turns token theft into a *detectable* event | ❌ **No** | No rotation at all (F4). This is the biggest security win of the model, entirely unrealised. |
+| 6 | Bearer tokens serve non-browser clients (mobile, CLI, third-party API) | ❌ **N/A** | There is one first-party web client on the same origin. Nothing consumes bearer tokens externally. |
+
+**Score: 2 clear, 1 partial, 3 unrealised.** The conclusion is uncomfortable but
+fair: *the current design pays the full complexity cost of split tokens while
+capturing mostly the benefits that a plain session cookie would also have given.*
+
+It is worth being precise about **why** this matters rather than treating it as
+mere inelegance — the added machinery is exactly where the defects clustered:
+
+- **F1** (Google sign-in broken) is a *token-shape drift* bug. It is only
+  possible because there are two token types with two independently written
+  signing sites.
+- **F10 / F20** (single-session, no global sign-out) come from the allow-list
+  being managed ad hoc at one call site.
+- The `401` on every anonymous page load is the bootstrap round-trip that
+  exists only because the access token cannot survive a reload.
+
+#### The counter-argument (why "just use one token" is not automatically right)
+
+Advantages 1 and 2 are real and should not be discarded. A naive "single token"
+migration that puts a JWT in `localStorage` would be **strictly worse than what
+exists today** — it would hand a long-lived credential to any XSS. "Single
+token" is only an improvement if it means **an `httpOnly` session cookie**.
+
+Note also that a session cookie would give *stronger* revocation than the
+current design, not weaker: with the session looked up per request, a logout
+takes effect on the very next request instead of up to 15 minutes later (F21).
+Since the app already performs a DB read per request (row 4 above), this costs
+essentially nothing.
+
+#### Two coherent destinations
+
+The current state is neither. Pick one deliberately.
+
+**Option A — finish the split.** Keep both tokens and actually collect the
+benefits: shared session-issuing function (fixes F1/F11), rotation with reuse
+detection (F4), per-device rows (F10/F20), shorter access TTL to narrow the
+revocation gap (F21).
+
+- *Best if:* a mobile app, CLI, or public API is on the roadmap.
+- *Cost:* moderate — the plumbing already exists; changes are concentrated in
+  `login`, `google`, `refresh` and `lib/auth.ts`.
+
+**Option B — collapse to one `httpOnly` session cookie.** An opaque session id
+(or a JWT) in a single cookie, with a server-side session table and sliding
+expiry.
+
+- *Gains:* immediate and complete revocation; no interceptor, no refresh dedupe,
+  no bootstrap round-trip, no event bus, no dual secrets, and F1's entire bug
+  class becomes impossible.
+- *Loses:* bearer-token support for non-browser clients — currently unused.
+- *Cost:* higher — touches all ~15 route handlers plus the whole client auth
+  layer.
+
+#### Decision — Option A (settled)
+
+**Option A was chosen and Option B is not being pursued.** See
+[§9](#9-recommendations-prioritised) for the authoritative record; the analysis
+above is retained only as the reasoning behind it.
+
+The rationale was pragmatic rather than ideological: the infrastructure already
+exists, fixes F1–F5 are already scoped against it, and it keeps the door open for
+a non-web client. Most of Option B's advantage over a *finished* Option A is the
+revocation lag (F21), which can be bought down cheaply by reducing the
+access-token TTL (15 min → ~5 min) without rewriting anything.
+
+> The conclusion of this section is therefore **not** "pick one" — it is "the
+> split-token model is sound but *unfinished*, and the work below finishes it."
 
 ---
 
@@ -367,6 +535,24 @@ These are deliberate, correct choices and should be preserved:
 - **Separate secrets** for access and refresh tokens.
 - **Server-side allow-list with `jti`** — real revocation, which stateless JWT
   schemes cannot do. Logout genuinely invalidates.
+- **The refresh token is never persisted — not raw, and not hashed.** Only the
+  `jti` (a CSPRNG `randomUUID()`) is stored, as a revocation handle. *Checked
+  explicitly:* the "store a hash, never the token" rule applies to **opaque**
+  token designs, where the token itself is the credential the server must
+  validate against storage. Here validity comes from the HMAC signature over
+  `JWT_REFRESH_SECRET`, so a leaked `jti` is useless without the secret — there
+  is no credential in the database to hash. Hashing the `jti` would add nothing.
+
+  *The natural follow-up — "then how does the server know the incoming token is
+  the same one the row refers to?"* — is answered by the signature, not by a
+  comparison. The `jti` sits **inside the signed payload**, so a valid signature
+  over `jti = X` proves this is the token minted with `jti = X`; producing a
+  different token with that same `jti` requires the secret. The two checks divide
+  cleanly: the **signature** establishes authenticity and integrity, the **row's
+  existence** establishes revocation state. Opaque-token designs need a stored
+  comparison because the comparison *is* their only verification; a signed JWT
+  replaces that step rather than skipping it. (`jti` is a 122-bit
+  `randomUUID()` with a `unique` index, so collisions are not a concern.)
 - **TTL index** on `RefreshToken.expires` — expired rows disappear without a cron.
 - **bcrypt cost 12**, hashing only on modification, `select: false` on the field.
 - **Short access-token lifetime** (15 minutes) limits the blast radius of a leak.
@@ -384,6 +570,17 @@ These are deliberate, correct choices and should be preserved:
 
 ## 9. Recommendations, prioritised
 
+### Architecture decision — SETTLED
+
+> **Decided: Option A — finish the split-token model.** Both tokens stay; the
+> work is to actually collect the benefits (shared session issuer, rotation with
+> reuse detection, per-device rows, shorter access TTL). Option B (collapsing to
+> a single `httpOnly` session cookie) is explicitly **not** being pursued.
+> Everything below assumes Option A.
+>
+> This resolves **F19** as a *decision*. F19 has no action item of its own — it
+> is the framing for items 1, 6, 7 and 9, and is discharged when those land.
+
 ### Do first (correctness / security)
 
 1. **Fix the Google route (F1).** Delete the hand-rolled `jwt.sign` calls and use
@@ -399,31 +596,195 @@ These are deliberate, correct choices and should be preserved:
 4. **Revoke sessions on password change (F5)** — `RefreshToken.deleteMany({ user })`
    inside `change-password`, and clear the caller's cookie.
 5. **Set `GOOGLE_CLIENT_SECRET` (F3)** or hide the Google buttons when it is absent.
+6. **Drop `deleteMany` from `login` (F10)** so sessions become genuinely
+   per-device — the `RefreshToken` schema already supports multiple rows per
+   user, so nothing else has to change. Then add an explicit
+   **"sign out of all devices"** action (F20) that performs the `deleteMany`,
+   and call it from `change-password` (F5). Consider a session cap (e.g. keep
+   the 5 most recent) rather than unbounded rows, and make the
+   delete-then-create atomic (F22).
 
 ### Do next (hardening)
 
-6. **Refresh-token rotation with reuse detection (F4):** issue a new `jti` on
-   every refresh, delete the old row, and if a *already-used* jti is presented,
+7. **Refresh-token rotation with reuse detection (F4):** issue a new `jti` on
+   every refresh, delete the old row, and if an *already-used* jti is presented,
    treat it as theft and revoke that user's whole token family.
-7. **Rate limiting (F6)** on `login`/`register`/`refresh` — per-IP and per-account.
-8. **Constant-time login (F7):** run a dummy bcrypt compare when the user is not
-   found, and make `register` respond identically whether or not the email exists
-   (send a "check your inbox" style response instead of `409`).
-9. **Extract one `requireAuth(req)` / `requireAdmin(req)` helper (F18)** and use
-   it in every route handler.
-10. **Widen the middleware matcher (F9)** to all private routes, or drop the
+   **Must ship with an `absoluteExpiresAt` hard cap** — set once at login, copied
+   forward unchanged by each rotation, never extended. Without it, rotation
+   slides `expires` forward on every use and *every* session becomes immortal for
+   any user who returns within the window. See
+   [§9.1](#91-designing-remember-me-under-option-a).
+8. **"Remember me", v1 (F23):** add the checkbox (defaulting to checked), send a
+   **boolean** (never a duration), and vary only the cookie — persistent when
+   checked, session-only when not. The row stays 30 days either way. Store
+   `rememberMe` on the row so rotation re-issues the cookie in the same mode
+   instead of silently promoting a session cookie to persistent.
+   Server-enforced expiry is **deferred to v2** — see [§9.1](#91-designing-remember-me-under-option-a).
+9. **Shorten the access-token TTL (F21)**, 15 min → ~5 min, to buy down the
+   revocation lag cheaply. The refresh flow already makes this transparent.
+10. **Rate limiting (F6)** on `login`/`register`/`refresh` — per-IP and per-account.
+11. **Constant-time login (F7):** run a dummy bcrypt compare when the user is not
+    found, and make `register` respond identically whether or not the email exists
+    (send a "check your inbox" style response instead of `409`).
+12. **Extract one `requireAuth(req)` / `requireAdmin(req)` helper (F18)** and use
+    it in every route handler.
+13. **Widen the middleware matcher (F9)** to all private routes, or drop the
     middleware layer entirely and rely on `RoleGuard` + API enforcement — but
     pick one deliberately.
 
 ### Cleanup
 
-11. Remove the `RoleGuard` console logging (F13).
-12. Align cookie flags between the two login paths (F11).
-13. Rename `middleware.ts` → `proxy.ts` for Next 16 (F16).
-14. Decide and document the single-session policy (F10).
-15. Add `zxcvbn` strength gating at registration (F15); enforce username
+14. Remove the `RoleGuard` console logging (F13).
+15. Align cookie flags between the two login paths (F11).
+16. Rename `middleware.ts` → `proxy.ts` for Next 16 (F16).
+17. Narrow the axios skip-list to `/refresh` + `/login` (F25), dropping the `/me`
+    coupling and the dead `/register` entry.
+18. Give `change-password` a UI caller, and handle Google-only accounts
+    explicitly rather than reporting "Incorrect old password" (F12).
+19. Add `zxcvbn` strength gating at registration (F15); enforce username
     uniqueness or drop the notion (F14).
-16. Trim `/api/auth/me` to the fields the client actually uses (F17).
+20. Trim `/api/auth/me` to the fields the client actually uses (F17).
+
+### Not scheduled
+
+- **F24** (no signing-key rotation support) is an operational note, not a
+  vulnerability. Revisit only if a mundane key rotation is ever needed.
+
+---
+
+### 9.1 Designing "remember me" under Option A
+
+There are two levers: the **cookie's** persistence (browser-side) and the
+**refresh-token row's** lifetime (server-side). They sit at different layers, so
+they can be set independently.
+
+#### Chosen approach
+
+**The refresh token keeps its 30-day lifetime server-side in every case. Only the
+cookie changes:** persistent (`expires` set) when "remember me" is checked,
+**session-only** (no `expires`, no `maxAge`) when it is not, so the browser drops
+it on close. One lifetime constant, one code path, and the DB row stays
+revocable either way.
+
+| Setting | Cookie | DB row |
+| --- | --- | --- |
+| Remember me **on** | persistent, `expires` +30d | 30 days |
+| Remember me **off** | **session cookie** — no `expires`/`maxAge` | 30 days |
+
+#### What this does and does not guarantee
+
+The cookie change is a **browser-side, advisory** control. It is the only thing
+enforcing the user's choice, and it is the one component we do not control:
+
+- **Mobile is the weak point.** On iOS/Android "closing the browser" rarely
+  terminates the process — tabs are backgrounded — so session cookies can
+  survive for weeks. Unchecking the box is close to a no-op there.
+- **Desktop session restore.** Chrome/Edge "Continue where you left off",
+  Firefox "Restore previous session", and Chrome's crash recovery all restore
+  session cookies.
+
+In both cases the user believes they are signed out and they are not, and
+because the row is still valid for 30 days there is no backstop.
+
+#### v1 scope — ship the simple version
+
+**Decision: v1 ships the cookie-only behaviour above. No server-side TTL
+variance between remembered and non-remembered sessions.** The row is 30 days in
+both cases. "Don't remember me" is therefore a **UI affordance backed by browser
+behaviour, not a server-enforced property**, and that is accepted for v1.
+
+A shorter *sliding* idle window for non-remembered sessions
+(`rememberMe ? 30d : 12h`) was considered and **rejected** — it does not
+actually solve the case it was aimed at:
+
+> A sliding window only expires a session that is abandoned for the *entire*
+> window. Any return inside it — including a backgrounded mobile tab that wakes
+> and triggers a refresh — pushes it forward again, indefinitely. It would have
+> covered only the "untouched for >12h" case, not the mobile-session-cookie
+> scenario that motivated it.
+
+The insight generalises: **a sliding window is a UX convenience, not a security
+control. The load-bearing piece is an absolute cap.**
+
+#### 🔜 Deferred to v2
+
+Proper enforcement of "don't remember me", to be designed then:
+
+- A **server-side idle TTL, slid on use**, *paired with an absolute cap* — the
+  cap is what makes it enforceable, per the note above.
+- Revisit whether non-remembered sessions should get a distinct, short absolute
+  lifetime (e.g. 24h) rather than inheriting the 30-day one. This is the option
+  that would genuinely close the mobile hole, at the cost of signing users out
+  on a fixed schedule.
+- Decide the desired behaviour on mobile specifically, where "closing the
+  browser" is not an observable event.
+
+> **Not deferred:** `absoluteExpiresAt` itself (see the two-clock problem below)
+> belongs to the **rotation** work in F4, not to remember-me. If rotation ships
+> in v1, the cap must ship with it — without one, *every* session becomes
+> immortal for any user who returns within the window, remembered or not.
+
+#### The two-clock problem (belongs to rotation / F4, not to remember-me)
+
+This one is **not deferred** — it is a property of rotation itself and applies to
+every session, remembered or not. If each rotation resets `expires` to
+`now + 30d`, then any user who returns at least monthly is **never** logged out:
+the session becomes immortal, and "30 days" quietly means "forever."
+
+The fix is to track **two independent clocks** per session row:
+
+- `expires` — the *sliding* idle window. Moves forward on every rotation. The
+  existing TTL index on this field keeps cleaning up abandoned sessions.
+- `absoluteExpiresAt` — a *hard cap*, set once at login and **copied forward
+  unchanged** by every rotation. Never extended.
+
+`/api/auth/refresh` must reject when `now > absoluteExpiresAt` even if the
+sliding window is still open. That is what makes "30 days" actually mean 30 days.
+
+#### Rotation must preserve the cookie mode
+
+Rotation re-issues the cookie. If the rotation code does not know the original
+was a *session* cookie, it will set a *persistent* one and silently upgrade the
+user to "remembered" without consent. The mode therefore has to live on the
+session row, not just in the original request.
+
+#### Schema additions to `RefreshToken`
+
+```
+rememberMe:        Boolean   // so rotation re-issues the cookie in the same mode
+absoluteExpiresAt: Date      // hard cap; copied forward on rotation, never extended
+expires:           Date      // (existing) sliding idle window + TTL index
+```
+
+Per-device rows (the F10 fix) compose correctly with this: each device carries
+its own remember-me mode and its own pair of clocks.
+
+#### Security note
+
+The client sends a **boolean**, never a duration. The server maps
+`rememberMe: true|false` onto the lifetimes above. Accepting a client-supplied
+expiry would let anyone mint a self-extending session.
+
+#### Interaction with the encrypted vault (favourable)
+
+The vault key is held in memory only and is cleared on every page load
+(see `ENCRYPTED_VAULT.md`). Remember-me therefore extends **authentication
+only — never vault access**: a remembered session still cannot read encrypted
+documents without the passphrase being re-entered. This materially lowers the
+risk of defaulting the checkbox to *checked*. Note it does still grant access to
+all *plaintext* links and documents.
+
+#### Where the changes land
+
+1. `app/(public)/login/page.tsx` — the checkbox.
+2. `hooks/useAuth.tsx` — `login(email, password, rememberMe)`.
+3. `app/api/auth/login/route.ts` — read the boolean, pick lifetimes, set the
+   cookie with or without `expires`.
+4. `models/RefreshToken.ts` — the two new fields above.
+5. `app/api/auth/refresh/route.ts` — enforce the absolute cap; on rotation copy
+   `absoluteExpiresAt` forward and re-issue the cookie in the stored mode.
+6. The shared session-issuing function (F1) — so the Google path gets identical
+   treatment; decide its default (OAuth logins are conventionally remembered).
 
 ---
 
