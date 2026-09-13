@@ -8,6 +8,9 @@
 - **Audience:** developers working on auth, and anyone assessing security posture
 - **Status of the code at time of writing:** password flow solid; **Google OAuth
   is broken** (see [§7.1](#71-critical))
+- **Fix log:** [`AUTH-FIX.md`](./AUTH-FIX.md) — findings are worked through one
+  at a time and recorded there in the order they were fixed. A finding marked
+  **✅ Fixed** below is closed; everything unmarked is still open.
 - **Related:** [`ENCRYPTED_VAULT.md`](./ENCRYPTED_VAULT.md) — the vault is
   deliberately *orthogonal* to auth (auth answers "who are you?", the vault
   answers "can anyone but you read this?")
@@ -383,8 +386,18 @@ every route reads `payload.userId` as `undefined`.
 
 *Checked and ruled out:* whether the `undefined` values collapse the allow-list
 query into an empty filter that would match *any* token (an auth bypass). They
-do not — Mongoose retains the keys with `undefined` values, so the query matches
-nothing. This is a **broken flow, not a bypass**.
+do not — this is a **broken flow, not a bypass**.
+
+> **Correction (added while fixing F8).** The mechanism is not quite what was
+> written here originally. Mongoose *does* retain the keys through casting, but
+> what makes the query safe is the MongoDB driver's `ignoreUndefined` option,
+> which defaults to `false` and therefore serialises `undefined` → `null`:
+> the wire filter is `{ jti: null, user: null }`, which matches no row. Set
+> `ignoreUndefined: true` on the `mongoose.connect` in `lib/db.ts` and the
+> filter becomes `{}` — at which point this **would** be a real bypass. The
+> safe default holds today (`lib/db.ts` passes only `bufferCommands: false`),
+> but the F8 fix removes the dependency on it: a Google-shaped token is now
+> rejected before any query is built.
 
 #### F2 — Google account linking does not check `email_verified`
 
@@ -414,7 +427,7 @@ current environment the Google exchange fails before any of F1/F2 matters.
 | **F5** | **Changing the password does not revoke sessions.** `change-password` never touches `RefreshToken`. | Defeats the main reason people change passwords. An attacker with a stolen refresh token keeps access. |
 | **F6** | **No rate limiting** on `login`, `register`, or `refresh`. | Credential stuffing and brute force are unimpeded. bcrypt cost 12 slows each attempt but is not a substitute. |
 | **F7** | **User enumeration.** `register` returns `409 "Email already in use"`; `login` runs bcrypt only when the user exists, so response timing differs measurably. | Lets an attacker build a list of valid accounts before attacking them. |
-| **F8** | **`verifyAccessToken` casts instead of validating.** | This is the *root cause* that let F1 ship silently. A runtime shape check would have failed loudly. |
+| ✅ **F8** | ~~**`verifyAccessToken` casts instead of validating.**~~ **Fixed** — see [AUTH-FIX §1](./AUTH-FIX.md#1--f8--token-payload-shape-was-never-validated-at-runtime). | This is the *root cause* that let F1 ship silently. A runtime shape check would have failed loudly. |
 | **F9** | **Middleware covers only 4 route patterns**; `/editor`, `/links`, `/settings`, `/media`, `/admin/*` rely on client-side `RoleGuard`. | Not a data leak (APIs are enforced) but inconsistent, and it lets private shells paint before redirecting. |
 | **F19** | **The split-token architecture is not banking its own benefits** — full audit in [§7.4](#74-architectural-assessment-is-the-split-token-model-earning-its-keep). **Resolved as a decision (Option A); remains open as work.** | The design pays the full complexity cost of two token types, an interceptor, refresh dedupe and a bootstrap round-trip, while realising only ~2 of its ~6 advantages. Not a defect to fix on its own — it is the *framing* for F1, F4, F5, F10 and F21: completing those is what makes the split earn its keep. |
 
@@ -590,9 +603,10 @@ These are deliberate, correct choices and should be preserved:
    `login` and `google` into one function so they cannot drift again.
 2. **Check `email_verified` (F2)** before creating *or linking* a Google account.
    Refuse, or require a password challenge, when linking to an existing account.
-3. **Validate token payload shape at runtime (F8)** — have `verifyAccessToken`
-   return `null` unless `userId` is a non-empty string. This alone would have
-   surfaced F1 immediately.
+3. ✅ **DONE — Validate token payload shape at runtime (F8)** — ~~have
+   `verifyAccessToken` return `null` unless `userId` is a non-empty string.~~
+   Both verifiers now reject any payload whose claims are the wrong shape.
+   See [AUTH-FIX §1](./AUTH-FIX.md#1--f8--token-payload-shape-was-never-validated-at-runtime).
 4. **Revoke sessions on password change (F5)** — `RefreshToken.deleteMany({ user })`
    inside `change-password`, and clear the caller's cookie.
 5. **Set `GOOGLE_CLIENT_SECRET` (F3)** or hide the Google buttons when it is absent.
