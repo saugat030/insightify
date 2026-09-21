@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
     // Atomic compare-and-set: whoever flips usedAt first owns the rotation.
     const claimed = await RefreshToken.findOneAndUpdate(
       { _id: row._id, usedAt: null },
-      { usedAt: new Date(), replacedBy: nextJti }
+      { usedAt: new Date() }
     );
     if (!claimed) {
       // Lost the race to a concurrent refresh — same situation as the grace path.

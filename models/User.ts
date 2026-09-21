@@ -48,6 +48,11 @@ const UserSchema = new Schema({
     required: false,
     default: null,
   },
+  // Email-verification code. Hashed, single-use, attempt-capped. See lib/otp.ts.
+  otpHash: { type: String, required: false, default: null, select: false },
+  otpExpiresAt: { type: Date, required: false, default: null },
+  otpAttempts: { type: Number, default: 0 },
+  otpLastSentAt: { type: Date, required: false, default: null },
   // 1. CHANGED: Password is no longer strictly required for Google users
   password: {
     type: String,

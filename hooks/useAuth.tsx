@@ -25,14 +25,26 @@ interface AuthContextType {
   accessToken: string | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<User>;
+  // Resolves once the code is on its way; no session exists until verifyOtp.
   register: (
     username: string,
     email: string,
     password: string
   ) => Promise<void>;
+  verifyOtp: (email: string, code: string) => Promise<User>;
+  resendOtp: (email: string) => Promise<void>;
   googleLogin: (code: string) => Promise<User>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
+}
+
+// Thrown by login() when the account exists and the password is right, but the
+// address has not been verified — the caller routes to the code screen.
+export class EmailNotVerifiedError extends Error {
+  constructor(public email: string) {
+    super("Verify your email address to sign in.");
+    this.name = "EmailNotVerifiedError";
+  }
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -109,8 +121,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         updateAccessToken(accessToken);
         return user;
       } catch (error: any) {
+        const data = error.response?.data;
+        if (data?.code === "EMAIL_NOT_VERIFIED") {
+          throw new EmailNotVerifiedError(data.email ?? email);
+        }
         console.error("Login failed:", error);
-        throw new Error(error.response?.data?.error || "Login failed");
+        throw new Error(data?.error || "Login failed");
       }
     },
     [updateAccessToken]
@@ -124,15 +140,42 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           email,
           password,
         });
-        // after successful registration, log them in
-        await login(email, password);
+        // No auto-login: the account is unverified until a code is entered.
       } catch (error: any) {
         console.error("Registration failed:", error);
         throw new Error(error.response?.data?.error || "Registration failed");
       }
     },
-    [login]
+    []
   );
+
+  const verifyOtp = useCallback(
+    async (email: string, code: string) => {
+      try {
+        const res = await axiosInstance.post("/api/auth/verify-otp", {
+          email,
+          code,
+        });
+        const { user, accessToken } = res.data;
+        setUser(user);
+        updateAccessToken(accessToken);
+        return user;
+      } catch (error: any) {
+        throw new Error(error.response?.data?.error || "Verification failed");
+      }
+    },
+    [updateAccessToken]
+  );
+
+  const resendOtp = useCallback(async (email: string) => {
+    try {
+      await axiosInstance.post("/api/auth/resend-otp", { email });
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.error || "Could not send a new code"
+      );
+    }
+  }, []);
 
   const logout = useCallback(async () => {
     try {
@@ -182,6 +225,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     isLoading,
     login,
     register,
+    verifyOtp,
+    resendOtp,
     googleLogin,
     logout,
     logoutAll,

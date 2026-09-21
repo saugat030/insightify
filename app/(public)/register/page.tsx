@@ -9,12 +9,15 @@ import {
   GoogleAuthButton,
   googleAuthEnabled,
 } from "@/app/_components/google-auth-button";
+import { VerifyEmailForm } from "@/app/_components/verify-email-form";
 
 export default function RegisterPage() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Set once registration succeeds: the account exists but is unverified.
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
 
   const { register, googleLogin, user, isLoading: isAuthLoading } = useAuth();
   const router = useRouter();
@@ -51,7 +54,7 @@ export default function RegisterPage() {
 
     try {
       await register(username, email, password);
-      router.push("/dashboard");
+      setPendingEmail(email);
     } catch (err: any) {
       setError(err.message || "An unknown error occurred.");
     }
@@ -62,6 +65,14 @@ export default function RegisterPage() {
 
       {/* Main Card */}
       <div className="relative z-10 w-full max-w-sm rounded-xl border border-white/10 bg-zinc-900/50 p-8 shadow-2xl backdrop-blur-md">
+        {pendingEmail ? (
+          <VerifyEmailForm
+            email={pendingEmail}
+            onVerified={() => router.push("/dashboard")}
+            onBack={() => setPendingEmail(null)}
+          />
+        ) : (
+          <>
         {/* Header */}
         <div className="mb-8 text-center">
           <Link href="/" className="mb-6 inline-block">
@@ -190,6 +201,8 @@ export default function RegisterPage() {
             Sign in
           </Link>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

@@ -31,6 +31,9 @@ is easy to tell apart from closed work at a glance.
 | 7 | **F17** | `/api/auth/me` returned the whole user document | ✅ Fixed |
 | 7 | **F19** | Split-token model unfinished | ✅ Discharged |
 | 7 | **F25** | Axios skip-list coupled to a single call site | ✅ Fixed |
+| 8 | — | *(live verification of entries 1–7)* | — |
+| 9 | **F2** | Email verification by OTP — **stage 2, completes F2** | ✅ Fixed |
+| 9 | **F7** | Registration revealed whether an email was taken | ✅ Fixed |
 
 ---
 
@@ -569,7 +572,6 @@ old row. Four fields were added to `RefreshToken`:
 | --- | --- |
 | `family` | uuid, constant across every rotation of one login |
 | `usedAt` | `null` = live; set = consumed |
-| `replacedBy` | the `jti` that superseded it |
 | `absoluteExpiresAt` | hard cap, copied forward, **never** extended |
 
 `family` deliberately stays **out of the JWT** — it is read off the row — so the
@@ -615,7 +617,7 @@ issues **no refresh token**, so a thief cannot gain persistence through it.
 The consume step is an atomic compare-and-set:
 
 ```ts
-findOneAndUpdate({ _id: row._id, usedAt: null }, { usedAt: now, replacedBy: nextJti })
+findOneAndUpdate({ _id: row._id, usedAt: null }, { usedAt: now })
 ```
 
 so two simultaneous refreshes cannot both rotate. Losing that race falls into
@@ -645,6 +647,29 @@ field in MongoDB, so they read as live and rotate normally on first use.
 `deleteMany({ family: undefined })` serialises to `{ family: null }` and would
 match **every legacy row for every user**. That is the same footgun analysed
 under F1.
+
+### Storage, and a field that was removed
+
+Retired rows live until the family's cap, so a busy session accumulates one row
+per refresh for up to 30 days. Measured at **~524 bytes per row** (276 document
++ ~248 index), that is roughly 0.5–1 MB per active user per month — fine at
+current scale, but it grows with the userbase, and Atlas M0's 512 MB would run
+out somewhere in the low hundreds of active users.
+
+**`replacedBy` was dropped.** It stored the `jti` that superseded a row, but
+nothing ever read it — `family` already does the grouping, so the pointer was
+forensic only. Removing it saves 36 bytes a row. Do not re-add it without a
+reader.
+
+Two larger reductions were considered and **deliberately deferred** until the
+userbase justifies them:
+
+- Give retired rows a **shorter TTL** (e.g. `usedAt + 7d`) while the live row
+  keeps the cap — roughly 4× less storage, one line, at the cost of only
+  detecting reuse if the legitimate user returns inside that window.
+- Keep **one step of history** (`previousJti` on the live row) instead of the
+  full chain — one row per family, but blind to a thief who rotates twice before
+  the user returns.
 
 ### Verification
 
@@ -856,7 +881,7 @@ their refresh-token rows; the two real accounts were untouched.
 | F7 | Login timing: Google-only account | 0.292–0.303s — no leak |
 | F10 | Device A after device B logs in | **still works** (pre-fix: 401) |
 | F4 | Rotation | `T1 ≠ T2 ≠ T3` — a new token every refresh |
-| F4 | Row shape | 3 families for 3 logins; chain `7813cf86 → cddba8fb → 3f41bf0b` via `replacedBy`; cap `2026-10-13` copied forward unchanged |
+| F4 | Row shape | 3 families for 3 logins; chain `7813cf86 → cddba8fb → 3f41bf0b` sharing one `family`; cap `2026-10-13` copied forward unchanged |
 | F4 | Replay inside grace | `200`, **no** `Set-Cookie` — no rotation |
 | F4 | **Two simultaneous refreshes** | both `200`, **neither tab logged out** |
 | F4 | Replay consumed 10 min ago | `401` + **entire family deleted (3 rows)**, other two families untouched |
@@ -890,3 +915,137 @@ their refresh-token rows; the two real accounts were untouched.
 `getToken(code)` fails before any of the reviewed code runs. The `403`
 unverified-email refusal and the `409 PASSWORD_ACCOUNT_EXISTS` linking refusal
 remain unexercised. Worth running once the secret exists.
+
+---
+
+## 9 — F2 stage 2, F7 · Email verification by OTP
+
+**Files:** [`lib/mail.ts`](../lib/mail.ts), [`lib/otp.ts`](../lib/otp.ts),
+[`lib/emailVerification.ts`](../lib/emailVerification.ts) (all new),
+[`app/api/auth/verify-otp/route.ts`](../app/api/auth/verify-otp/route.ts) and
+[`resend-otp`](../app/api/auth/resend-otp/route.ts) (new),
+[`register`](../app/api/auth/register/route.ts),
+[`login`](../app/api/auth/login/route.ts), [`models/User.ts`](../models/User.ts),
+[`hooks/useAuth.tsx`](../hooks/useAuth.tsx),
+[`app/_components/verify-email-form.tsx`](../app/_components/verify-email-form.tsx) (new),
+and the register and login pages.
+
+This is **stage 2 of the F2 fix** — stage 1 (§3) added `emailVerified` and made
+Google linking depend on it. Nothing in the Google route changed here: it
+already reads the flag, so verified accounts simply began linking on their own,
+exactly as designed.
+
+### The flow
+
+```
+POST /api/auth/register
+  ├─ email free              -> create user (emailVerified: false), mail a code
+  ├─ email exists UNVERIFIED -> reclaim the record, mail a code
+  └─ email exists VERIFIED   -> mail "you already have an account"
+  ALL THREE return the same 200                       <- this is the F7 fix
+
+POST /api/auth/verify-otp { email, code }  -> emailVerified: true + issueSession()
+POST /api/auth/resend-otp { email }        -> generic 200, 60s cooldown
+POST /api/auth/login on an unverified account -> 403 EMAIL_NOT_VERIFIED + a fresh code
+```
+
+### F7 — registration stopped being an oracle
+
+`register` used to answer `409 "Email already in use"`. It now returns an
+identical `200` in all three cases above; the real answer goes to the inbox. An
+address that already has a verified account receives a "you already have an
+account" mail rather than a code, so the owner learns of the attempt and the
+registrant learns nothing.
+
+Username collisions still return `409`. Usernames are not secret, and the
+registrant needs actionable feedback — the finding was about *email*
+enumeration.
+
+Combined with the constant-time login from §7, both halves of F7 are now closed.
+
+### The squatting problem, and its residual
+
+Letting an unverified record be overwritten is necessary: otherwise anyone could
+register `victim@example.com`, never verify, and **hold that address forever**.
+
+But a naive reclaim creates the opposite hazard — an attacker overwrites a
+signup that is *in flight*, so the victim's inbox code now verifies an account
+whose password the attacker chose. So reclaim is allowed **only once the
+existing record's code has expired** (10 minutes), which means a registration
+still in progress cannot be hijacked.
+
+**Residual, accepted:** a patient attacker can wait out the 10 minutes and
+overwrite an abandoned record. The victim would then be verifying an account
+with the attacker's password. The exposure is small — an unverified account
+holds no data, and the victim's own re-registration overwrites it symmetrically
+— but it is inherent to keeping partial accounts in the `User` collection. The
+"pending registration" design considered in the option review removes it
+entirely; it was declined for its extra moving parts.
+
+### OTP parameters
+
+| | |
+| --- | --- |
+| Length | 6 digits, `crypto.randomInt` (CSPRNG — `Math.random` would be predictable) |
+| Lifetime | 10 minutes |
+| Storage | bcrypt cost 10, `select: false` |
+| Attempts | **5, then the code is destroyed** |
+| Resend | 60-second cooldown |
+| Reissue | a new code replaces the old |
+
+The attempt cap is the load-bearing control: a 6-digit code is a 10⁶ space and
+falls in minutes without one. It is OTP-specific and independent of the general
+rate limiting (**F6**) still being handled separately.
+
+### Forced verification of existing accounts
+
+Every pre-existing account is `emailVerified: false`, so `login` returns
+`403 EMAIL_NOT_VERIFIED` and mails a code — existing users are verified on next
+sign-in with no migration. Google accounts are already `true` and unaffected.
+
+The check runs **after** the password comparison, so it tells an attacker
+nothing they could not already confirm.
+
+### Client
+
+`register` no longer auto-logs-in — it cannot, since no session exists until
+verification. `useAuth` gained `verifyOtp` and `resendOtp`, and login throws a
+typed `EmailNotVerifiedError` carrying the address. A shared
+`VerifyEmailForm` is rendered by both the register page (after signup) and the
+login page (after a 403).
+
+### Verification
+
+Exercised against a running server and a real database, then through the real
+UI in a browser:
+
+| Behaviour | Result |
+| --- | --- |
+| Register | `200` generic; user created unverified, code hashed, 10-min expiry |
+| Login before verifying | `403 EMAIL_NOT_VERIFIED` |
+| 5 wrong codes | `400` ×5, then `429` and the code destroyed |
+| Correct code after the cap | `400` — the cap really does burn it |
+| Expired code | `400` |
+| Correct, unexpired code | `200`, `emailVerified: true`, session cookie set, no `otpHash` or `password` in the response |
+| Login after verifying | `200` |
+| Register on an existing **verified** email | `200`, byte-identical to a fresh signup |
+| **UI:** register → code screen → dashboard | works |
+| **UI:** unverified login → code screen | works |
+
+**Confirmed in the Resend dashboard:** `saugat030.com.np` is verified and
+messages leave with status `Sent` — both the verification code and the "you
+already have an account" mail. The `@example.invalid` test addresses show
+`Delivery Delayed`, which is the expected result of a domain that cannot
+resolve; the send itself succeeded.
+
+One presentational note: the code appears in the **subject line**
+(`227243 is your Insightify verification code`). That is deliberate — it shows
+in notification previews, so most people never open the mail — but it does mean
+the code lands anywhere subjects are logged or indexed. Move it into the body
+only if that matters to you.
+
+### Still open
+
+**Password reset does not exist**, and now matters more: registration enforces
+zxcvbn ≥ 3, so a forgotten password means a lost account. It reuses `lib/mail.ts`
+and the same code machinery, and is the natural next piece.

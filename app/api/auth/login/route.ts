@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
 import { issueSession } from "@/lib/session";
+import { issueEmailOtp } from "@/lib/emailVerification";
 import bcrypt from "bcryptjs";
 
 // Burned when the account does not exist, so a missing user costs the same
@@ -32,6 +33,19 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
+      );
+    }
+
+    // Checked only after the password, so it reveals nothing to a guesser.
+    if (!user.emailVerified) {
+      await issueEmailOtp(user);
+      return NextResponse.json(
+        {
+          error: "Verify your email address to sign in. We've sent you a code.",
+          code: "EMAIL_NOT_VERIFIED",
+          email: user.email,
+        },
+        { status: 403 }
       );
     }
 

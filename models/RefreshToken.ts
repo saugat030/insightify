@@ -24,10 +24,6 @@ const RefreshTokenSchema = new Schema({
     type: Date,
     default: null,
   },
-  replacedBy: {
-    type: String,
-    default: null,
-  },
   expires: {
     type: Date,
     required: true,

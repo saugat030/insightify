@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, FormEvent, useEffect, Suspense } from "react";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth, EmailNotVerifiedError } from "@/hooks/useAuth";
+import { VerifyEmailForm } from "@/app/_components/verify-email-form";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AxiosError } from "axios";
@@ -15,6 +16,8 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Set when login succeeds on password but the address is unverified.
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
 
   const { login, googleLogin, user, isLoading: isAuthLoading } = useAuth();
   const router = useRouter();
@@ -62,9 +65,18 @@ function LoginForm() {
         router.push(from || "/dashboard");
       }
     } catch (err) {
+      if (err instanceof EmailNotVerifiedError) {
+        setPendingEmail(err.email);
+        return;
+      }
       const error = err as AxiosError<{ message?: string }>;
       setError(error.message || "An unknown error occurred.");
     }
+  };
+
+  const goHome = () => {
+    const from = searchParams.get("from");
+    router.push(from || "/dashboard");
   };
 
   // reusing your loading state logic
@@ -83,6 +95,14 @@ function LoginForm() {
     <div className="relative flex min-h-screen w-full flex-col items-center justify-center">
 
       <div className="relative z-10 w-full max-w-sm rounded-xl border border-white/10 bg-zinc-900/50 p-8 shadow-2xl backdrop-blur-md">
+        {pendingEmail ? (
+          <VerifyEmailForm
+            email={pendingEmail}
+            onVerified={goHome}
+            onBack={() => setPendingEmail(null)}
+          />
+        ) : (
+          <>
         <div className="mb-8 text-center">
           <Link href="/" className="mb-6 inline-block"></Link>
           <h1 className="text-2xl font-semibold tracking-tight text-white font-oswald">
@@ -179,6 +199,8 @@ function LoginForm() {
             Create an account
           </Link>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

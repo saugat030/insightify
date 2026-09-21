@@ -2,6 +2,16 @@ import { NextResponse } from "next/server";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
 import { checkPasswordStrength } from "@/lib/passwordStrength";
+import { issueEmailOtp } from "@/lib/emailVerification";
+import { sendMail } from "@/lib/mail";
+import { accountExistsEmail } from "@/lib/otp";
+
+// Registration never reveals whether an email is already taken — the answer
+// goes to the inbox instead. See docs/AUTH-FIX.md §9.
+const GENERIC_OK = {
+  success: true,
+  message: "Check your inbox for a verification code.",
+};
 
 export async function POST(req: Request) {
   try {
@@ -27,34 +37,53 @@ export async function POST(req: Request) {
     }
 
     await connectToDb();
+    const normalizedEmail = String(email).toLowerCase().trim();
 
-    // Same uniqueness rule the admin create-user path applies.
-    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
-    if (existingUser) {
+    // Usernames are not secret, so collisions can be reported directly.
+    const usernameTaken = await User.findOne({
+      username,
+      email: { $ne: normalizedEmail },
+    });
+    if (usernameTaken) {
       return NextResponse.json(
-        {
-          error:
-            existingUser.email === String(email).toLowerCase()
-              ? "Email already in use"
-              : "Username already taken",
-        },
+        { error: "Username already taken" },
         { status: 409 }
       );
     }
 
-    // The password will be hashed by the pre hook in the User model
-    const newUser = new User({
+    const existing = await User.findOne({ email: normalizedEmail }).select(
+      "+otpHash"
+    );
+
+    if (existing?.emailVerified) {
+      await sendMail({ to: normalizedEmail, ...accountExistsEmail() });
+      return NextResponse.json(GENERIC_OK, { status: 200 });
+    }
+
+    // An unverified record can be taken over by a later registration, otherwise
+    // an abandoned signup would squat the address forever. Only once its code
+    // has expired, so a registration still in flight cannot be hijacked.
+    if (existing) {
+      const inFlight =
+        existing.otpExpiresAt && new Date(existing.otpExpiresAt) > new Date();
+      if (!inFlight) {
+        existing.username = username;
+        existing.password = password; // pre-save hook re-hashes
+        await existing.save();
+      }
+      await issueEmailOtp(existing);
+      return NextResponse.json(GENERIC_OK, { status: 200 });
+    }
+
+    const user = new User({
       username,
-      email,
+      email: normalizedEmail,
       password,
     });
+    await user.save();
+    await issueEmailOtp(user);
 
-    await newUser.save();
-
-    return NextResponse.json(
-      { message: "User created successfully" },
-      { status: 201 }
-    );
+    return NextResponse.json(GENERIC_OK, { status: 200 });
   } catch (error) {
     console.error("[AUTH_REGISTER_ERROR]", error);
     return NextResponse.json(

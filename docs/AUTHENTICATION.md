@@ -36,10 +36,10 @@
 10. [Endpoint reference](#10-endpoint-reference)
 
 > **Fix log:** closed findings are marked ✅ here and written up in
-> [`AUTH-FIX.md`](./AUTH-FIX.md). Fixed so far: **F8**, **F1**, **F11**, **F2**, **F5**, **F10**, **F20**,
-> **F22**, **F18**, **F21**, **F4**, **F9**, **F13**, **F14**, **F15**, **F16**,
-> **F17**, **F19**, **F25**; **F7** and **F12** partly. Still open: **F6**
-> (rate limiting, handled separately), **F23** and **F24**.
+> [`AUTH-FIX.md`](./AUTH-FIX.md). Fixed: **F1**, **F2**, **F4**, **F5**, **F7**, **F8**, **F9**, **F10**,
+> **F11**, **F13**–**F22**, **F25**. **F12** partly (no UI caller yet). Open:
+> **F6** (rate limiting, handled separately), **F23** (remember me, v2) and
+> **F24** (not scheduled).
 
 ---
 
@@ -88,6 +88,9 @@ stateless JWT scheme cannot do.
 | [`lib/auth.ts`](../lib/auth.ts) | Signs/verifies both token types. Throws at import if `JWT_SECRET` / `JWT_REFRESH_SECRET` are missing. |
 | [`models/User.ts`](../models/User.ts) | User schema, bcrypt pre-save hook, `comparePassword()`, tier quota helpers. |
 | [`models/RefreshToken.ts`](../models/RefreshToken.ts) | Refresh-token allow-list, with a TTL index for automatic cleanup. |
+| [`lib/mail.ts`](../lib/mail.ts) | Resend wrapper. Sender defaults to `insightify@saugat030.com.np`, overridable with `MAIL_FROM`. |
+| [`lib/otp.ts`](../lib/otp.ts) | Code generation (CSPRNG), hashing, and the email bodies. |
+| [`lib/emailVerification.ts`](../lib/emailVerification.ts) | Issues and clears codes; owns the resend cooldown. |
 | [`lib/requireAuth.ts`](../lib/requireAuth.ts) | **The one auth gate for API routes** — `requireAuth()` / `requireAdmin()`. Verifies the bearer token, loads the user, enforces `sessionsRevokedAt`. The only caller of `verifyAccessToken`. |
 | [`lib/session.ts`](../lib/session.ts) | **The session lifecycle in one place** — `issueSession`, `revokeSession`, `revokeAllSessions`, `clearSessionCookie`. Both login paths go through it. |
 | [`hooks/useAuth.tsx`](../hooks/useAuth.tsx) | `AuthProvider` — holds the access token and user object; `login`/`register`/`googleLogin`/`logout`/`logoutAll`. |
@@ -105,6 +108,7 @@ stateless JWT scheme cannot do.
 ```
 username, email (unique, lowercased), emailVerified (Boolean, default false),
 sessionsRevokedAt (Date|null), password (bcrypt, select:false),
+otpHash (select:false), otpExpiresAt, otpAttempts, otpLastSentAt,
 googleId (unique, sparse), profilePicture, role ("admin" | "user"),
 tier ("free" | "pro"), linksCreatedCount, lastResetDate, createdAt,
 vaultEnabled, vaultSalt, vaultKdf, vaultVerifier      ← see ENCRYPTED_VAULT.md
@@ -113,7 +117,7 @@ vaultEnabled, vaultSalt, vaultKdf, vaultVerifier      ← see ENCRYPTED_VAULT.md
 - `emailVerified` records whether the owner has *proved* they control the
   address. Google sign-ups set it `true` (the ID token is Google's proof);
   password sign-ups stay `false` until the v2 OTP flow ([§9.2](#92-email-verification-otp--v2))
-  lands. It gates Google account linking — see [F2](#f2--google-account-linking-does-not-check-email_verified--fixed-stage-1-of-2).
+  lands. It gates Google account linking — see [F2](#f2--google-account-linking-does-not-check-email_verified--fixed-both-stages).
 - `password` is **not required** when `googleId` is present, so Google-only
   accounts have no password at all.
 - `password` uses `select: false` — it is never returned unless a query
@@ -125,7 +129,7 @@ vaultEnabled, vaultSalt, vaultKdf, vaultVerifier      ← see ENCRYPTED_VAULT.md
 
 ```
 user (ObjectId ref), jti (unique), family (uuid), usedAt (Date|null),
-replacedBy (jti|null), expires (Date), absoluteExpiresAt (Date), createdAt
+expires (Date), absoluteExpiresAt (Date), createdAt
 ```
 
 `RefreshTokenSchema.index({ expires: 1 }, { expireAfterSeconds: 0 })` — MongoDB
@@ -172,13 +176,18 @@ The `jti` is the handle used for revocation: the same value is written to the
 ```
 POST /api/auth/register { username, email, password }
   ├─ reject if any field missing                      -> 400
-  ├─ reject if password.length < 8                    -> 400
-  ├─ reject if email already exists                   -> 409
-  └─ new User(...).save()   (pre-save hook bcrypts)   -> 201
+  ├─ reject if password.length < 8 or zxcvbn < 3      -> 400
+  ├─ reject if the USERNAME is taken                  -> 409
+  └─ by email:
+       ├─ free              -> create unverified, mail a 6-digit code
+       ├─ exists UNVERIFIED -> reclaim (only once its code expired), mail a code
+       └─ exists VERIFIED   -> mail "you already have an account"
+     ALL THREE -> identical 200 "check your inbox"     ← F7
 ```
 
-No tokens are issued. The client (`useAuth.register`) immediately calls
-`login()` afterwards.
+No session is issued. The account is unverified until
+`POST /api/auth/verify-otp` succeeds, which is what issues the session. See
+[AUTH-FIX §9](./AUTH-FIX.md#9--f2-stage-2-f7--email-verification-by-otp).
 
 ### 5.2 Login (password)
 
@@ -511,7 +520,7 @@ do not — this is a **broken flow, not a bypass**.
 > but the F8 fix removes the dependency on it: a Google-shaped token is now
 > rejected before any query is built.
 
-#### ✅ F2 — ~~Google account linking does not check `email_verified`~~ — FIXED (stage 1 of 2)
+#### ✅ F2 — ~~Google account linking does not check `email_verified`~~ — FIXED (both stages)
 
 > **Fixed.** The route now refuses an unverified Google address outright, and
 > refuses to link onto an existing account that has not proved the address
@@ -540,10 +549,11 @@ without any proof of the password. This is the classic pre-account-takeover
 linking vector. Google normally only issues verified emails for consumer
 accounts, but the claim exists precisely so relying parties check it.
 
-> ✅ **Resolved.** This finding was escalated by the F1 fix (the linking code
-> became reachable) and has now been fixed in turn. Note the practical effect
-> today: since every password account is `emailVerified: false`, Google sign-in
-> never links onto one. That relaxes on its own once the v2 OTP flow ships.
+> ✅ **Fully resolved.** Escalated by the F1 fix, fixed in stage 1, and
+> completed by stage 2 — the OTP flow now sets `emailVerified`, so Google
+> linking works for verified accounts exactly as designed. **The Google route
+> was not touched in stage 2**: it already read the flag, so the behaviour
+> relaxed on its own. See [AUTH-FIX §9](./AUTH-FIX.md#9--f2-stage-2-f7--email-verification-by-otp).
 
 #### F3 — `GOOGLE_CLIENT_SECRET` is not configured
 
@@ -558,7 +568,7 @@ current environment the Google exchange fails before any of F1/F2 matters.
 | ✅ **F4** | ~~**No refresh-token rotation or reuse detection.**~~ **Fixed** — every refresh mints a new `jti` and retires the old row; replaying a retired one outside a 60s multi-tab grace window revokes that token family. Shipped with the `absoluteExpiresAt` hard cap. See [AUTH-FIX §6](./AUTH-FIX.md#6--f4--refresh-token-rotation-with-reuse-detection). | A stolen refresh token is valid for 30 days and its use is indistinguishable from the legitimate user's. Rotation + reuse detection turns theft into a detectable event. |
 | ✅ **F5** | ~~**Changing the password does not revoke sessions.**~~ **Fixed** — `change-password` now calls `revokeAllSessions()` and re-issues a fresh session to the caller. See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). | Defeats the main reason people change passwords. An attacker with a stolen refresh token keeps access. |
 | **F6** | **No rate limiting** on `login`, `register`, or `refresh`. | Credential stuffing and brute force are unimpeded. bcrypt cost 12 slows each attempt but is not a substitute. |
-| 🟡 **F7** | **Login timing fixed** — one bcrypt compare runs on every path, against a dummy hash when the account is missing (measured 261ms vs 248ms). ~~`login` runs bcrypt only when the user exists.~~ **`register`'s `409` remains** — responding identically needs the signal to move to the inbox, i.e. the [v2 OTP flow](#92-email-verification-otp--v2). See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). | Lets an attacker build a list of valid accounts before attacking them. |
+| ✅ **F7** | ~~**User enumeration.**~~ **Fixed, both halves.** Login runs one bcrypt compare on every path (measured 261ms vs 248ms); `register` now returns an identical `200` whether the email is free, unverified or already taken — the answer goes to the inbox. Username collisions still `409`, deliberately. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25) and [AUTH-FIX §9](./AUTH-FIX.md#9--f2-stage-2-f7--email-verification-by-otp). | Lets an attacker build a list of valid accounts before attacking them. |
 | ✅ **F8** | ~~**`verifyAccessToken` casts instead of validating.**~~ **Fixed** — see [AUTH-FIX §1](./AUTH-FIX.md#1--f8--token-payload-shape-was-never-validated-at-runtime). | This is the *root cause* that let F1 ship silently. A runtime shape check would have failed loudly. |
 | ✅ **F9** | ~~**Middleware covers only 4 route patterns.**~~ **Fixed** — the matcher now lists every private route (`/editor`, `/links`, `/settings`, `/media`, `/products`, `/admin/*`). Dead `publicRoutes` and the non-existent `/profile` were removed. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). | Not a data leak (APIs are enforced) but inconsistent, and it lets private shells paint before redirecting. |
 | ✅ **F19** | **The split-token architecture is not banking its own benefits** — full audit in [§7.4](#74-architectural-assessment-is-the-split-token-model-earning-its-keep). **Resolved as a decision (Option A); now also discharged as work** — F1, F4, F5, F10 and F21 have all landed, and §7.4's scorecard moved from 2 clear / 1 partial / 3 unrealised to **4 clear / 1 partial / 1 N/A**. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). | The design pays the full complexity cost of two token types, an interceptor, refresh dedupe and a bootstrap round-trip, while realising only ~2 of its ~6 advantages. Not a defect to fix on its own — it is the *framing* for F1, F4, F5, F10 and F21: completing those is what makes the split earn its keep. |
@@ -968,15 +978,19 @@ all *plaintext* links and documents.
 
 ### 9.2 Email verification (OTP) — v2
 
-**Status: deferred to v2, alongside the server-enforced "remember me" in
-[§9.1](#91-designing-remember-me-under-option-a).** This is **stage 2 of the F2
-fix**; stage 1 shipped (see [AUTH-FIX §3](./AUTH-FIX.md#3--f2--google-account-linking-did-not-check-email_verified)).
+**Status: ✅ SHIPPED.** This was stage 2 of the F2 fix and is now done — see
+[AUTH-FIX §9](./AUTH-FIX.md#9--f2-stage-2-f7--email-verification-by-otp) for the implementation, parameters and verification. The section below is
+retained as the design record.
+
+> **Remember me ([§9.1](#91-designing-remember-me-under-option-a)) is still
+> outstanding.** It was to ship alongside this; it did not, and is now the last
+> substantial v2 item.
 
 #### Why it is needed
 
 `register` accepts any email address without proving the registrant controls it.
 That is the root cause behind the second direction of
-[F2](#f2--google-account-linking-does-not-check-email_verified--fixed-stage-1-of-2): the
+[F2](#f2--google-account-linking-does-not-check-email_verified--fixed-both-stages): the
 local side of an email match is unproven, so Google's verified claim is not
 enough on its own to make auto-linking safe.
 
@@ -1023,8 +1037,10 @@ Not a small change, which is why it is not part of the F2 fix:
 
 | Method & path | Auth required | Body | Success | Failure modes |
 | --- | --- | --- | --- | --- |
-| `POST /api/auth/register` | — | `{username, email, password}` | `201 {message}` | `400` missing/short password · `409` email taken |
-| `POST /api/auth/login` | — | `{email, password}` | `200 {user, accessToken}` + cookie | `400` missing · `401` bad credentials |
+| `POST /api/auth/register` | — | `{username, email, password}` | `200 {message}` — identical whether or not the email exists | `400` missing/short/weak password · `409` username taken |
+| `POST /api/auth/verify-otp` | — | `{email, code}` | `200 {user, accessToken}` + cookie | `400` invalid/expired · `429` too many attempts |
+| `POST /api/auth/resend-otp` | — | `{email}` | `200 {message}` — always generic | `429` within the 60s cooldown |
+| `POST /api/auth/login` | — | `{email, password}` | `200 {user, accessToken}` + cookie | `400` missing · `401` bad credentials · `403` `EMAIL_NOT_VERIFIED` (a code is mailed) |
 | `POST /api/auth/refresh` | cookie | — | `200 {accessToken}` | `401` absent/invalid/revoked/expired · `404` user gone |
 | `POST /api/auth/logout` | cookie (optional) | — | `200 {message}` | always clears the cookie; revokes only this device's session |
 | `POST /api/auth/logout-all` | Bearer | — | `200 {success, revoked}` | `401` no/invalid token — revokes every session for the user |
@@ -1041,6 +1057,8 @@ Not a small change, which is why it is not part of the F2 fix:
 | `MONGODB_URI` | yes | all persistence |
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | for Google | client button + `audience` check |
 | `GOOGLE_CLIENT_SECRET` | for Google | **currently unset** — code exchange |
+| `RESEND_API_KEY` | yes, for email | verification codes |
+| `MAIL_FROM` | optional | sender address; defaults to `Insightify <insightify@saugat030.com.np>` |
 
 ---
 
