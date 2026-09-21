@@ -71,9 +71,20 @@ export async function revokeAllSessions(userId: unknown): Promise<number> {
   return result.deletedCount ?? 0;
 }
 
-// Revokes one session by its jti — the handle carried in that browser's cookie.
-export async function revokeSession(jti: string): Promise<void> {
-  await RefreshToken.deleteOne({ jti });
+// Ends the session a cookie belongs to. Deletes the whole lineage, not just
+// the live row: a row retired in the last 60s is still grace-eligible and could
+// mint an access token after logout. See docs/AUTH-FIX.md §11.
+export async function revokeSessionFamily(jti: string): Promise<number> {
+  const row = await RefreshToken.findOne({ jti }).select("family");
+  if (!row) return 0;
+
+  if (typeof row.family === "string" && row.family.length > 0) {
+    return revokeFamily(row.family);
+  }
+
+  // Rows predating rotation carry no family; there is nothing to sweep but this.
+  await RefreshToken.deleteOne({ _id: row._id });
+  return 1;
 }
 
 export async function clearSessionCookie(): Promise<void> {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
-import { issueEmailOtp } from "@/lib/emailVerification";
+import { issueOtp } from "@/lib/otpFlow";
 
 // Always the same answer, whether or not the address exists or is already
 // verified — this endpoint must not become an account oracle.
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
       return NextResponse.json(GENERIC_OK, { status: 200 });
     }
 
-    const { sent, retryAfterMs } = await issueEmailOtp(user);
+    const { sent, retryAfterMs } = await issueOtp(user, "verify");
     if (!sent) {
       return NextResponse.json(
         {

@@ -50,6 +50,8 @@ const UserSchema = new Schema({
   },
   // Email-verification code. Hashed, single-use, attempt-capped. See lib/otp.ts.
   otpHash: { type: String, required: false, default: null, select: false },
+  // What the live code is FOR. A verification code must not reset a password.
+  otpPurpose: { type: String, enum: ["verify", "reset", null], default: null },
   otpExpiresAt: { type: Date, required: false, default: null },
   otpAttempts: { type: Number, default: 0 },
   otpLastSentAt: { type: Date, required: false, default: null },

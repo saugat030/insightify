@@ -36,6 +36,32 @@ export function otpEmail(code: string): { subject: string; html: string; text: s
   };
 }
 
+export function resetOtpEmail(code: string): { subject: string; html: string; text: string } {
+  return {
+    subject: `${code} is your Insightify password reset code`,
+    text: `Use the code ${code} to set a new Insightify password. It expires in ${OTP_TTL_MS / 60000} minutes. If you did not request this, ignore this email — your password has not changed.`,
+    html: `<div style="font-family:system-ui,sans-serif;max-width:480px">
+  <h2 style="margin:0 0 16px">Reset your password</h2>
+  <p style="margin:0 0 20px;color:#444">Enter this code to choose a new password:</p>
+  <p style="font-size:32px;letter-spacing:8px;font-weight:700;margin:0 0 20px">${code}</p>
+  <p style="margin:0;color:#666;font-size:13px">It expires in ${OTP_TTL_MS / 60000} minutes. If you did not request this, ignore this email — your password has not changed.</p>
+</div>`,
+  };
+}
+
+export function noPasswordSetEmail(): { subject: string; html: string; text: string } {
+  return {
+    subject: "Signing in to Insightify",
+    text: "Someone asked to reset the password for this Insightify account, but it signs in with Google and has no password set. Use 'Continue with Google' to sign in. If this wasn't you, you can ignore this email.",
+    html: `<div style="font-family:system-ui,sans-serif;max-width:480px">
+  <h2 style="margin:0 0 16px">You haven't set a password</h2>
+  <p style="margin:0 0 12px;color:#444">Someone asked to reset the password for this account, but it signs in with Google and has no password set.</p>
+  <p style="margin:0 0 12px;color:#444">Use <strong>Continue with Google</strong> on the sign-in page instead.</p>
+  <p style="margin:0;color:#666;font-size:13px">If this wasn't you, you can safely ignore this email.</p>
+</div>`,
+  };
+}
+
 export function accountExistsEmail(): { subject: string; html: string; text: string } {
   return {
     subject: "You already have an Insightify account",

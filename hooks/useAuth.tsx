@@ -33,6 +33,12 @@ interface AuthContextType {
   ) => Promise<void>;
   verifyOtp: (email: string, code: string) => Promise<User>;
   resendOtp: (email: string) => Promise<void>;
+  forgotPassword: (email: string) => Promise<void>;
+  resetPassword: (
+    email: string,
+    code: string,
+    newPassword: string
+  ) => Promise<User>;
   googleLogin: (code: string) => Promise<User>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
@@ -167,6 +173,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     [updateAccessToken]
   );
 
+  const forgotPassword = useCallback(async (email: string) => {
+    try {
+      await axiosInstance.post("/api/auth/forgot-password", { email });
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.error || "Could not send a reset code"
+      );
+    }
+  }, []);
+
+  const resetPassword = useCallback(
+    async (email: string, code: string, newPassword: string) => {
+      try {
+        const res = await axiosInstance.post("/api/auth/reset-password", {
+          email,
+          code,
+          newPassword,
+        });
+        const { user, accessToken } = res.data;
+        setUser(user);
+        updateAccessToken(accessToken);
+        return user;
+      } catch (error: any) {
+        throw new Error(error.response?.data?.error || "Could not reset password");
+      }
+    },
+    [updateAccessToken]
+  );
+
   const resendOtp = useCallback(async (email: string) => {
     try {
       await axiosInstance.post("/api/auth/resend-otp", { email });
@@ -227,6 +262,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     register,
     verifyOtp,
     resendOtp,
+    forgotPassword,
+    resetPassword,
     googleLogin,
     logout,
     logoutAll,

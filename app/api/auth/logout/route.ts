@@ -5,7 +5,7 @@ import connectToDb from "@/lib/db";
 import { verifyRefreshToken } from "@/lib/auth";
 import {
   REFRESH_TOKEN_COOKIE_NAME,
-  revokeSession,
+  revokeSessionFamily,
   clearSessionCookie,
 } from "@/lib/session";
 
@@ -21,10 +21,10 @@ export async function POST() {
       try {
         const payload = verifyRefreshToken(refreshTokenString);
 
-        // 2. If the token is valid, revoke just this device's session
+        // 2. If the token is valid, end this device's session entirely
         if (payload) {
           await connectToDb();
-          await revokeSession(payload.jti);
+          await revokeSessionFamily(payload.jti);
         }
       } catch (verifyError) {
         // Token verification failed, but we still want to clear the cookie

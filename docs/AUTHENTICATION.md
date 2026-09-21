@@ -36,7 +36,8 @@
 10. [Endpoint reference](#10-endpoint-reference)
 
 > **Fix log:** closed findings are marked ✅ here and written up in
-> [`AUTH-FIX.md`](./AUTH-FIX.md). Fixed: **F1**, **F2**, **F4**, **F5**, **F7**, **F8**, **F9**, **F10**,
+> [`AUTH-FIX.md`](./AUTH-FIX.md). Beyond the review: **password reset** ([AUTH-FIX §10](./AUTH-FIX.md#10--password-reset)) and **email verification by OTP**.
+> Fixed: **F1**, **F2**, **F4**, **F5**, **F7**, **F8**, **F9**, **F10**,
 > **F11**, **F13**–**F22**, **F25**. **F12** partly (no UI caller yet). Open:
 > **F6** (rate limiting, handled separately), **F23** (remember me, v2) and
 > **F24** (not scheduled).
@@ -90,9 +91,9 @@ stateless JWT scheme cannot do.
 | [`models/RefreshToken.ts`](../models/RefreshToken.ts) | Refresh-token allow-list, with a TTL index for automatic cleanup. |
 | [`lib/mail.ts`](../lib/mail.ts) | Resend wrapper. Sender defaults to `insightify@saugat030.com.np`, overridable with `MAIL_FROM`. |
 | [`lib/otp.ts`](../lib/otp.ts) | Code generation (CSPRNG), hashing, and the email bodies. |
-| [`lib/emailVerification.ts`](../lib/emailVerification.ts) | Issues and clears codes; owns the resend cooldown. |
+| [`lib/otpFlow.ts`](../lib/otpFlow.ts) | Issues, clears and **consumes** codes. `consumeOtp()` is the only place a code is checked, so the purpose comparison cannot be skipped. Owns the resend cooldown. |
 | [`lib/requireAuth.ts`](../lib/requireAuth.ts) | **The one auth gate for API routes** — `requireAuth()` / `requireAdmin()`. Verifies the bearer token, loads the user, enforces `sessionsRevokedAt`. The only caller of `verifyAccessToken`. |
-| [`lib/session.ts`](../lib/session.ts) | **The session lifecycle in one place** — `issueSession`, `revokeSession`, `revokeAllSessions`, `clearSessionCookie`. Both login paths go through it. |
+| [`lib/session.ts`](../lib/session.ts) | **The session lifecycle in one place** — `issueSession`, `revokeSessionFamily`, `revokeFamily`, `revokeAllSessions`, `clearSessionCookie`. Both login paths go through it. |
 | [`hooks/useAuth.tsx`](../hooks/useAuth.tsx) | `AuthProvider` — holds the access token and user object; `login`/`register`/`googleLogin`/`logout`/`logoutAll`. |
 | [`lib/axiosInstance.ts`](../lib/axiosInstance.ts) | Attaches the bearer token; intercepts `401` and retries once after refreshing. |
 | [`proxy.ts`](../proxy.ts) | Edge cookie *presence* check (Next 16 name for middleware). Covers every private route. |
@@ -108,7 +109,8 @@ stateless JWT scheme cannot do.
 ```
 username, email (unique, lowercased), emailVerified (Boolean, default false),
 sessionsRevokedAt (Date|null), password (bcrypt, select:false),
-otpHash (select:false), otpExpiresAt, otpAttempts, otpLastSentAt,
+otpHash (select:false), otpPurpose ("verify"|"reset"), otpExpiresAt,
+otpAttempts, otpLastSentAt,
 googleId (unique, sparse), profilePicture, role ("admin" | "user"),
 tier ("free" | "pro"), linksCreatedCount, lastResetDate, createdAt,
 vaultEnabled, vaultSalt, vaultKdf, vaultVerifier      ← see ENCRYPTED_VAULT.md
@@ -297,6 +299,25 @@ row and the cookie flags are identical by construction. The former
 `jwt.sign({ id, role })` calls and the divergent `sameSite=strict`/7-day cookie
 are gone. See [AUTH-FIX §2](./AUTH-FIX.md#2--f1--google-oauth-issued-tokens-with-the-wrong-claim-shape).
 
+### 5.7b Password reset
+
+```
+POST /api/auth/forgot-password { email }
+  ├─ unknown account     -> nothing sent
+  ├─ Google-only account -> mail "you haven't set a password"
+  └─ password account    -> mail a 6-digit code (otpPurpose = "reset")
+  ALL THREE -> identical 200
+
+POST /api/auth/reset-password { email, code, newPassword }
+  ├─ strength check FIRST, so a weak password does not spend the code
+  ├─ consumeOtp(user, code, "reset")   ← a "verify" code is refused here
+  ├─ set password, emailVerified = true
+  └─ revokeAllSessions() then issueSession()  -> caller stays in, others out
+```
+
+Codes are **purpose-tagged**: a verification code cannot reset a password, and
+the check lives in one function so no route can omit it. See [AUTH-FIX §10](./AUTH-FIX.md#10--password-reset).
+
 ### 5.8 Change password
 
 ```
@@ -414,14 +435,18 @@ Logout is **scoped to one device** — it removes only the `jti` carried in that
 browser's own cookie, and clears only that browser's cookie:
 
 ```ts
-await revokeSession(payload.jti);   // deleteOne({ jti })
+await revokeSessionFamily(payload.jti);   // deleteMany({ family })
 await clearSessionCookie();
 ```
 
+It revokes the whole **lineage**, not just the live row. Deleting only the live
+row left recently-retired rows behind, and those stay grace-eligible for 60
+seconds — long enough to mint an access token after logout. See [AUTH-FIX §11](./AUTH-FIX.md#11--logout-did-not-end-the-session-for-up-to-60-seconds).
+
 | Action | Effect |
 | --- | --- |
-| Log out on device B | Deletes `jti_B`. **A is unaffected and stays signed in.** |
-| Log out on device A | Deletes `jti_A`. **B is unaffected and stays signed in.** |
+| Log out on device B | Deletes B's whole rotation lineage. **A is unaffected and stays signed in.** |
+| Log out on device A | Deletes A's whole rotation lineage. **B is unaffected and stays signed in.** |
 | `logout-all` on either | Deletes both rows; every device signs out at its next refresh. |
 
 Login and logout are now **symmetric**: each touches exactly one session, and
@@ -1040,9 +1065,11 @@ Not a small change, which is why it is not part of the F2 fix:
 | `POST /api/auth/register` | — | `{username, email, password}` | `200 {message}` — identical whether or not the email exists | `400` missing/short/weak password · `409` username taken |
 | `POST /api/auth/verify-otp` | — | `{email, code}` | `200 {user, accessToken}` + cookie | `400` invalid/expired · `429` too many attempts |
 | `POST /api/auth/resend-otp` | — | `{email}` | `200 {message}` — always generic | `429` within the 60s cooldown |
+| `POST /api/auth/forgot-password` | — | `{email}` | `200 {message}` — identical for unknown, Google-only and real accounts | `400` missing email |
+| `POST /api/auth/reset-password` | — | `{email, code, newPassword}` | `200 {user, accessToken, revokedSessions}` + cookie | `400` invalid code / weak password |
 | `POST /api/auth/login` | — | `{email, password}` | `200 {user, accessToken}` + cookie | `400` missing · `401` bad credentials · `403` `EMAIL_NOT_VERIFIED` (a code is mailed) |
 | `POST /api/auth/refresh` | cookie | — | `200 {accessToken}` | `401` absent/invalid/revoked/expired · `404` user gone |
-| `POST /api/auth/logout` | cookie (optional) | — | `200 {message}` | always clears the cookie; revokes only this device's session |
+| `POST /api/auth/logout` | cookie (optional) | — | `200 {message}` | always clears the cookie; revokes this device's whole rotation lineage |
 | `POST /api/auth/logout-all` | Bearer | — | `200 {success, revoked}` | `401` no/invalid token — revokes every session for the user |
 | `GET /api/auth/me` | Bearer | — | `200 <user minus password>` | `401` · `404` |
 | `POST /api/auth/google` | — | `{code}` | `200 {accessToken, user}` + cookie | `400` no code/payload · `403` `GOOGLE_EMAIL_UNVERIFIED` · `409` `PASSWORD_ACCOUNT_EXISTS` · `500` exchange failed |

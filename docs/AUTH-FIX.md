@@ -34,6 +34,8 @@ is easy to tell apart from closed work at a glance.
 | 8 | — | *(live verification of entries 1–7)* | — |
 | 9 | **F2** | Email verification by OTP — **stage 2, completes F2** | ✅ Fixed |
 | 9 | **F7** | Registration revealed whether an email was taken | ✅ Fixed |
+| 10 | — | **Password reset** (not a review finding) | ✅ Added |
+| 11 | — | **Logout left grace-eligible tokens behind** (not a review finding) | ✅ Fixed |
 
 ---
 
@@ -346,7 +348,7 @@ mattered — it defeats the main reason people change passwords.
 | Export | Role |
 | --- | --- |
 | `issueSession(user)` | Mints a session. **No longer deletes anything.** |
-| `revokeSession(jti)` | One device, by the handle in its own cookie. |
+| `revokeSession(jti)` | One device, by the handle in its own cookie. *(Superseded — see [§11](#11--logout-did-not-end-the-session-for-up-to-60-seconds): deleting only the live row left retired rows grace-eligible. Replaced by `revokeSessionFamily`.)* |
 | `revokeAllSessions(userId)` | Every device. Returns the count. |
 | `clearSessionCookie()` | Clears the caller's cookie. |
 
@@ -370,7 +372,8 @@ dead — without that. The response carries the new `accessToken` and a
 `revokedSessions` count.
 
 `logout` was also refactored onto `revokeSession()` / `clearSessionCookie()`,
-removing its duplicated cookie-name constant and inline query.
+removing its duplicated cookie-name constant and inline query. *(`revokeSession`
+was later replaced — [§11](#11--logout-did-not-end-the-session-for-up-to-60-seconds).)*
 
 ### Revision — the session cap was removed
 
@@ -921,7 +924,8 @@ remain unexercised. Worth running once the secret exists.
 ## 9 — F2 stage 2, F7 · Email verification by OTP
 
 **Files:** [`lib/mail.ts`](../lib/mail.ts), [`lib/otp.ts`](../lib/otp.ts),
-[`lib/emailVerification.ts`](../lib/emailVerification.ts) (all new),
+[`lib/otpFlow.ts`](../lib/otpFlow.ts) (all new; named
+`emailVerification.ts` at the time, renamed in §10),
 [`app/api/auth/verify-otp/route.ts`](../app/api/auth/verify-otp/route.ts) and
 [`resend-otp`](../app/api/auth/resend-otp/route.ts) (new),
 [`register`](../app/api/auth/register/route.ts),
@@ -1049,3 +1053,177 @@ only if that matters to you.
 **Password reset does not exist**, and now matters more: registration enforces
 zxcvbn ≥ 3, so a forgotten password means a lost account. It reuses `lib/mail.ts`
 and the same code machinery, and is the natural next piece.
+
+---
+
+## 10 — Password reset
+
+**Files:** [`app/api/auth/forgot-password`](../app/api/auth/forgot-password/route.ts)
+and [`reset-password`](../app/api/auth/reset-password/route.ts) (new),
+[`lib/otpFlow.ts`](../lib/otpFlow.ts) (renamed from `emailVerification.ts`),
+[`lib/otp.ts`](../lib/otp.ts), [`models/User.ts`](../models/User.ts),
+[`hooks/useAuth.tsx`](../hooks/useAuth.tsx),
+[`app/(public)/forgot-password/page.tsx`](../app/(public)/forgot-password/page.tsx) (new),
+and the login page.
+
+**Not one of F1–F25** — the original review never covered it, because the app
+had no reset flow to review. It became urgent once registration started
+enforcing zxcvbn ≥ 3: a strong password with no recovery path means a forgotten
+password is a permanently lost account.
+
+### The flow
+
+```
+POST /api/auth/forgot-password { email }
+  ├─ no such account      -> send nothing
+  ├─ Google-only account  -> mail "you haven't set a password"
+  └─ password account     -> mail a 6-digit reset code
+  ALL THREE return an identical 200
+
+POST /api/auth/reset-password { email, code, newPassword }
+  -> set password, emailVerified: true, revokeAllSessions(), issueSession()
+```
+
+### Purpose-tagged codes
+
+Reset reuses the verification machinery, which creates a real hazard: **a
+verification code must never be usable to reset a password.** Without a check,
+anyone who could obtain a signup code could seize the account.
+
+`User.otpPurpose` (`"verify" | "reset"`) tags the live code, and the comparison
+lives inside a single `consumeOtp(user, code, purpose)` in `lib/otpFlow.ts` —
+the only place a code is ever checked. No route can forget it. `verify-otp` was
+refactored onto the same helper rather than keeping its own copy; that is the
+F18 lesson applied before the duplication existed.
+
+### Google-only accounts
+
+The request was to tell the user "you have not set your password yet". That
+message is delivered **by email, not in the HTTP response** — answering
+differently in the response would reveal both that the account exists and how it
+signs in, undoing F7. The inbox is the right channel, exactly as `register`
+handles "you already have an account".
+
+### Two things testing caught
+
+**The resend cooldown was shared across purposes.** Registering and then
+immediately requesting a reset silently issued nothing: `issueOtp` hit the
+60-second cooldown left over from the signup code, so the pending code kept
+`purpose: "verify"` while `forgot-password` still answered "a code is on its
+way". It failed *closed* — the purpose check refused the reset — but the flow
+was wrong. The cooldown now applies only when the purpose is unchanged, since a
+different purpose is a different intent rather than a repeat.
+
+**The attempt cap used to return `429`.** Distinguishing "too many attempts"
+from "invalid code" tells a prober that a code exists for that address, which is
+an account oracle. Both now return the same `400`, and the shared message says
+to request a new code. `verify-otp`'s existing `429` was changed to match.
+
+### Order of operations
+
+Password strength is checked **before** the code is consumed, so a rejected
+password does not cost the user their code — verified: after a weak-password
+rejection, `otpAttempts` was still 0 and the code still worked.
+
+### Verification
+
+Exercised against a running server and a real database, then through the UI:
+
+| Behaviour | Result |
+| --- | --- |
+| forgot-password: unknown / real / Google-only | three identical `200`s |
+| Reset using a **verify**-purpose code | `400` — the purpose check holds |
+| Weak new password | `400`, code **not** spent |
+| Valid reset | `200`, `revokedSessions: 2`, one fresh session issued |
+| Old device's refresh cookie | `401` |
+| Login with the old password | `401` |
+| Login with the new password | `200` |
+| Replaying the spent code | `400` |
+| Response body | no `password`, no `otpHash` |
+| **UI:** email → code + new password → dashboard | works |
+
+### Notes
+
+A reset sets `emailVerified: true` — receiving the code proves control of the
+address — so it doubles as a verification path for an unverified account.
+
+Throttling is the 60-second per-account cooldown only. Per-IP limits are **F6**,
+still handled separately.
+
+---
+
+## 11 — Logout did not end the session for up to 60 seconds
+
+**Files:** [`lib/session.ts`](../lib/session.ts),
+[`app/api/auth/logout/route.ts`](../app/api/auth/logout/route.ts)
+
+Found by reading the logout path while answering a question about it, not by a
+failing test.
+
+### The issue
+
+Logout deleted exactly one row — the live one:
+
+```ts
+revokeSession(jti) → RefreshToken.deleteOne({ jti })
+```
+
+That looks sufficient, because the deleted row is the one the cookie points at.
+But rotation leaves **retired rows** behind, and retired rows are not inert: a
+row whose `usedAt` is within 60 seconds is **grace-eligible**, and the grace path
+issues an access token.
+
+```
+T+0s   jti_4 rotated away (retired); jti_5 becomes live
+T+10s  user logs out      -> jti_5 deleted; jti_4 remains, retired 10s ago
+T+30s  jti_4 is replayed  -> GRACE -> 200 + access token
+```
+
+So for up to a minute after logging out, a token that had already been rotated
+away could still mint an access token. Narrow — it needs a *superseded* token
+rather than the current one — but logout is supposed to mean the session is
+over, and for 60 seconds it did not.
+
+### The fix
+
+Logout now ends the whole lineage:
+
+```ts
+revokeSessionFamily(jti) → look up the row → revokeFamily(row.family)
+```
+
+One extra indexed read. There is no row left to match, so the grace path cannot
+fire. Rows predating rotation carry no `family`, so those fall back to deleting
+the single row.
+
+`revokeSession()` was **removed** rather than kept alongside — leaving a helper
+that is known to leave grace-eligible rows behind is a trap for the next caller.
+
+Clearing the tombstones immediately is a secondary benefit: they otherwise
+survive until the family's 30-day cap, which matters more than it would have
+since shortening retired-row TTL was deliberately deferred (see §4).
+
+Post-logout reuse *detection* is lost, and that is fine — the session is already
+dead, so there is nothing left to revoke and nothing to alert on.
+
+### Verification
+
+Against a running server and a real database:
+
+| | Result |
+| --- | --- |
+| Rows before logout | 3 (2 retired + 1 live, one family) |
+| Rows after logout | **0** |
+| Replaying a token retired seconds ago | **`401`** |
+| Same replay with the **old** `deleteOne` behaviour, simulated | **`200` + an access token** ← the bug |
+
+The last row was reproduced deliberately by deleting only the live row, to
+confirm the defect was real rather than theoretical.
+
+### Not changed
+
+Logout still does **not** stamp `sessionsRevokedAt`, so the logged-out device's
+existing access token stays valid until it expires — up to 15 minutes. That is
+the per-device revocation lag recorded under **F21** and accepted: the user
+logged out on their own device, and the client drops its in-memory token
+immediately. `logout-all` does stamp it.

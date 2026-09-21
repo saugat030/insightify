@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
-import { otpMatches, OTP_MAX_ATTEMPTS } from "@/lib/otp";
-import { clearOtp } from "@/lib/emailVerification";
+import { consumeOtp } from "@/lib/otpFlow";
 import { issueSession } from "@/lib/session";
-
-// One message for every failure mode, so this cannot be used to probe which
-// addresses exist or which codes are close.
-const INVALID = { error: "Invalid or expired code" };
 
 export async function POST(req: Request) {
   try {
@@ -24,33 +19,19 @@ export async function POST(req: Request) {
       email: String(email).toLowerCase().trim(),
     }).select("+otpHash");
 
-    if (!user || !user.otpHash || !user.otpExpiresAt) {
-      return NextResponse.json(INVALID, { status: 400 });
-    }
-
-    if (new Date(user.otpExpiresAt) < new Date()) {
-      clearOtp(user);
-      await user.save();
-      return NextResponse.json(INVALID, { status: 400 });
-    }
-
-    if ((user.otpAttempts ?? 0) >= OTP_MAX_ATTEMPTS) {
-      clearOtp(user);
-      await user.save();
+    if (!user) {
       return NextResponse.json(
-        { error: "Too many attempts. Request a new code." },
-        { status: 429 }
+        { error: "Invalid or expired code." },
+        { status: 400 }
       );
     }
 
-    if (!(await otpMatches(String(code), user.otpHash))) {
-      user.otpAttempts = (user.otpAttempts ?? 0) + 1;
-      await user.save();
-      return NextResponse.json(INVALID, { status: 400 });
+    const result = await consumeOtp(user, String(code), "verify");
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
     }
 
     user.emailVerified = true;
-    clearOtp(user);
     await user.save();
 
     const accessToken = await issueSession(user);

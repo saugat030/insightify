@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
 import { checkPasswordStrength } from "@/lib/passwordStrength";
-import { issueEmailOtp } from "@/lib/emailVerification";
+import { issueOtp } from "@/lib/otpFlow";
 import { sendMail } from "@/lib/mail";
 import { accountExistsEmail } from "@/lib/otp";
 
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
         existing.password = password; // pre-save hook re-hashes
         await existing.save();
       }
-      await issueEmailOtp(existing);
+      await issueOtp(existing, "verify");
       return NextResponse.json(GENERIC_OK, { status: 200 });
     }
 
@@ -81,7 +81,7 @@ export async function POST(req: Request) {
       password,
     });
     await user.save();
-    await issueEmailOtp(user);
+    await issueOtp(user, "verify");
 
     return NextResponse.json(GENERIC_OK, { status: 200 });
   } catch (error) {
