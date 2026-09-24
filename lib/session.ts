@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { randomUUID } from "crypto";
 import RefreshToken from "@/models/RefreshToken";
 import User from "@/models/User";
@@ -24,12 +24,15 @@ export async function issueSession(user: SessionUser): Promise<string> {
     Date.now() + REFRESH_TOKEN_EXPIRATION_DAYS * 24 * 60 * 60 * 1000
   );
 
+  const userAgent = ((await headers()).get("user-agent") ?? "").slice(0, 255);
+
   // Deliberately uncapped: the TTL index bounds growth, and evicting by age
   // would kill stable sessions in favour of churn. See docs/AUTH-FIX.md §4.
   await RefreshToken.create({
     user: user._id,
     jti,
     family: randomUUID(),
+    userAgent,
     expires,
     // Equal to `expires` in v1; v2's idle window makes them differ.
     absoluteExpiresAt: expires,

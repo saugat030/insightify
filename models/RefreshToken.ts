@@ -19,6 +19,13 @@ const RefreshTokenSchema = new Schema({
     type: String,
     required: true,
   },
+  // Captured at login so the sessions screen can name the device. Copied
+  // forward by rotation, since it describes the session, not the token.
+  userAgent: {
+    type: String,
+    required: false,
+    default: "",
+  },
   // null = live. Set = already rotated away; presenting it again is reuse.
   usedAt: {
     type: Date,

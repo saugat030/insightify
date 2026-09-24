@@ -11,6 +11,7 @@ import {
 import axiosInstance, { setAccessToken } from "@/lib/axiosInstance";
 import { useRouter } from "next/navigation";
 
+// Mirrors the projection /api/auth/me returns — keep the two in step.
 interface User {
   _id: string;
   role: "admin" | "user";
@@ -18,6 +19,11 @@ interface User {
   profilePicture: string | null;
   username: string;
   email: string;
+  emailVerified?: boolean;
+  googleId?: string | null;
+  linksCreatedCount?: number;
+  lastResetDate?: string;
+  createdAt?: string;
 }
 
 interface AuthContextType {
@@ -42,6 +48,7 @@ interface AuthContextType {
   googleLogin: (code: string) => Promise<User>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
+  changePassword: (oldPassword: string, newPassword: string) => Promise<void>;
 }
 
 // Thrown by login() when the account exists and the password is right, but the
@@ -225,6 +232,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [updateAccessToken, router]);
 
+  const changePassword = useCallback(
+    async (oldPassword: string, newPassword: string) => {
+      try {
+        const res = await axiosInstance.post("/api/auth/change-password", {
+          oldPassword,
+          newPassword,
+        });
+        // The server revokes every session and hands back a fresh one, so the
+        // tab that made the change stays signed in.
+        if (res.data?.accessToken) updateAccessToken(res.data.accessToken);
+      } catch (error: any) {
+        throw new Error(
+          error.response?.data?.error || "Could not change password"
+        );
+      }
+    },
+    [updateAccessToken]
+  );
+
   // Revokes every session for this user, on every device, not just this one.
   const logoutAll = useCallback(async () => {
     try {
@@ -267,6 +293,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     googleLogin,
     logout,
     logoutAll,
+    changePassword,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

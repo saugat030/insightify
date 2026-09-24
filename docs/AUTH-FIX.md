@@ -36,6 +36,8 @@ is easy to tell apart from closed work at a glance.
 | 9 | **F7** | Registration revealed whether an email was taken | ✅ Fixed |
 | 10 | — | **Password reset** (not a review finding) | ✅ Added |
 | 11 | — | **Logout left grace-eligible tokens behind** (not a review finding) | ✅ Fixed |
+| 12 | **F12** | `change-password` had no UI caller | ✅ Fixed — closes F12 |
+| 12 | **F20** | `logoutAll()` had no button | ✅ Wired |
 
 ---
 
@@ -1227,3 +1229,93 @@ existing access token stays valid until it expires — up to 15 minutes. That is
 the per-device revocation lag recorded under **F21** and accepted: the user
 logged out on their own device, and the client drops its in-memory token
 immediately. `logout-all` does stamp it.
+
+---
+
+## 12 — F12 · Settings page, and a session list
+
+**Files:** [`app/(private)/(user)/settings/page.tsx`](../app/(private)/(user)/settings/page.tsx)
+and its `_components/`, [`app/api/auth/sessions/route.ts`](../app/api/auth/sessions/route.ts) (new),
+[`lib/userAgent.ts`](../lib/userAgent.ts) (new), [`lib/session.ts`](../lib/session.ts),
+[`models/RefreshToken.ts`](../models/RefreshToken.ts),
+[`app/api/auth/refresh/route.ts`](../app/api/auth/refresh/route.ts),
+[`hooks/useAuth.tsx`](../hooks/useAuth.tsx)
+
+F12's server half was fixed in §7; its remaining half was that **nothing called
+`change-password`** — the settings page was an "Under Construction" placeholder.
+`useAuth().logoutAll()` (F20) was unwired for the same reason. Both are now
+reachable, and the page also answers the question left hanging in §4: with
+sessions per-device and uncapped, users need a way to *see* them.
+
+### `GET /api/auth/sessions`
+
+One row per family has `usedAt: null`, so querying live rows returns exactly the
+active sessions — no grouping needed.
+
+Two values are derived rather than stored:
+
+- **Signed-in at** = `absoluteExpiresAt − 30 days`. The cap is set once at login
+  and never extended, so it dates the login exactly. No extra field.
+- **Last active** = the live row's `createdAt`, i.e. when the most recent
+  rotation minted it.
+
+**Which session is "this device"** cannot come from the access token — it
+carries no family. It is resolved by reading the refresh cookie, verifying it,
+and looking up its row.
+
+### `DELETE /api/auth/sessions`
+
+Revokes one family. Two things worth noting:
+
+**Ownership is enforced**, not assumed: `findOne({ family, user })` before
+deleting. Without it, anyone holding a valid access token could revoke any
+family id they could guess. Verified — a second user revoking the first user's
+family gets `404`, and the victim's session survives.
+
+**"Was this my session?" is read before the delete**, not inferred after. The
+first draft checked `currentFamily() === null` afterwards, which happens to work
+but is indistinguishable from "no cookie at all".
+
+### Device naming
+
+`RefreshToken.userAgent` is captured at login from the request headers and
+**copied forward by rotation** — it describes the session, not the token.
+`describeUserAgent()` reduces it to "Chrome on Windows" / "Safari on iOS":
+deliberately crude, enough to tell a phone from a laptop, not a fingerprint.
+
+**No IP address is stored.** It would make unfamiliar logins easier to spot, but
+it is PII and was not asked for — a deliberate omission rather than an
+oversight. It is a one-field change if wanted.
+
+### Also fixed
+
+The `User` interface in `useAuth` had drifted from what `/api/auth/me` returns
+since F17 — it was missing `googleId`, `emailVerified`, `createdAt` and the
+quota fields. Typing the settings page surfaced it.
+
+### Verification
+
+Against a running server and a real database, then through the UI:
+
+| Behaviour | Result |
+| --- | --- |
+| Two logins with different user-agents | listed as "Chrome on Windows" and "Safari on iOS" |
+| `current` flag | set on the calling device only |
+| Revoke another session | `200`; that device's refresh → `401`, caller's → `200` |
+| **Another user** revoking that family | `404`, victim's session unaffected |
+| **UI:** revoke button | list goes 2 → 1, "This device" still present |
+| **UI:** mismatched confirmation | caught client-side |
+| **UI:** weak new password | rejected by the server's zxcvbn gate |
+| **UI:** valid change | succeeds, **user stays signed in on the page** |
+| Old password after change | `401` |
+| New password after change | `200` |
+
+That "stays signed in" row is F5's re-issue behaviour working end to end
+through a real form for the first time.
+
+### An environment note
+
+Running `next build` against a project whose dev server is live clobbers the
+Turbopack dev route manifest — **every API route starts returning 404** while
+the source is perfectly fine. `rm -rf .next` and restart. Worth knowing before
+it looks like a code fault.

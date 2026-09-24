@@ -113,6 +113,8 @@ export async function POST(req: NextRequest) {
       user: user._id,
       jti: nextJti,
       family: row.family,
+      // Describes the session, so it survives rotation unchanged.
+      userAgent: row.userAgent ?? "",
       expires: cap,
       absoluteExpiresAt: cap,
     });

@@ -36,7 +36,7 @@
 10. [Endpoint reference](#10-endpoint-reference)
 
 > **Fix log:** closed findings are marked ✅ here and written up in
-> [`AUTH-FIX.md`](./AUTH-FIX.md). Beyond the review: **password reset** ([AUTH-FIX §10](./AUTH-FIX.md#10--password-reset)) and **email verification by OTP**.
+> [`AUTH-FIX.md`](./AUTH-FIX.md). Beyond the review: **a settings page with a session list**, **password reset** ([AUTH-FIX §10](./AUTH-FIX.md#10--password-reset)) and **email verification by OTP**.
 > Fixed: **F1**, **F2**, **F4**, **F5**, **F7**, **F8**, **F9**, **F10**,
 > **F11**, **F13**–**F22**, **F25**. **F12** partly (no UI caller yet). Open:
 > **F6** (rate limiting, handled separately), **F23** (remember me, v2) and
@@ -130,7 +130,7 @@ vaultEnabled, vaultSalt, vaultKdf, vaultVerifier      ← see ENCRYPTED_VAULT.md
 ### `RefreshToken` (the allow-list)
 
 ```
-user (ObjectId ref), jti (unique), family (uuid), usedAt (Date|null),
+user (ObjectId ref), jti (unique), family (uuid), userAgent, usedAt (Date|null),
 expires (Date), absoluteExpiresAt (Date), createdAt
 ```
 
@@ -604,14 +604,14 @@ current environment the Google exchange fails before any of F1/F2 matters.
 | --- | --- |
 | ✅ **F10** | ~~**Login wipes every other session** — `RefreshToken.deleteMany({ user })` before creating the new one. Signing in on a phone silently logs you out on your laptop.~~ **Fixed** — the `deleteMany` is gone; sessions are per-device and uncapped. See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). |
 | ✅ **F11** | ~~**Cookie settings differ between flows** — password: `sameSite: "lax"`, 30 days; Google: `sameSite: "strict"`, 7 days. Also the Google cookie uses `maxAge` while login uses `expires`.~~ **Fixed** as a consequence of F1 — a shared issuer cannot emit two sets of flags. Both are now `sameSite: "lax"`, 30 days, `expires`. See [AUTH-FIX §2](./AUTH-FIX.md#2--f1--google-oauth-issued-tokens-with-the-wrong-claim-shape). |
-| 🟡 **F12** | ~~doesn't handle Google-only accounts gracefully~~ **Fixed** — returns `400 NO_PASSWORD_SET` with an explanation. **Still has no caller in the UI**: the settings page is an "Under Construction" placeholder, so building one is a feature, not a cleanup. `useAuth().logoutAll()` is unwired for the same reason. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). |
+| ✅ **F12** | ~~**`/api/auth/change-password` has no caller in the UI** and doesn't handle Google-only accounts gracefully.~~ **Both fixed** — `400 NO_PASSWORD_SET` for Google-only accounts (§7), and the settings page now hosts a change-password form, a **session list** with per-device revoke, and a "sign out everywhere" button (wiring `logoutAll()`, F20's UI gap). See [AUTH-FIX §12](./AUTH-FIX.md#12--f12--settings-page-and-a-session-list). |
 | ✅ **F13** | ~~**`RoleGuard` logs the full user object to the console on every render**~~ **Fixed** — three logs in `RoleGuard`, one in `useAuth.login`, and `proxy.ts`'s per-request `"Middleware hit"` all removed. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). |
 | ✅ **F14** | ~~**Registration doesn't enforce username uniqueness**~~ **Fixed** — `register` now applies the same `$or: [{email}, {username}]` check the admin path uses, and says which field collided. A unique *index* was deliberately not added: it fails to build if duplicates already exist. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). |
 | ✅ **F15** | ~~**Password policy is length ≥ 8 only.**~~ **Fixed** — `register` and `change-password` gate on zxcvbn score ≥ 3 via [`lib/passwordStrength.ts`](../lib/passwordStrength.ts), with email and username as `userInputs`. (The dependency is `@zxcvbn-ts/core`, not classic `zxcvbn`; `@zxcvbn-ts/language-en` was added so feedback reads as English rather than i18n keys — the same fix repaired the vault strength meter.) See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). |
 | ✅ **F16** | ~~**`middleware.ts` is deprecated in Next 16.**~~ **Fixed** — now [`proxy.ts`](../proxy.ts) exporting `proxy`. The build reports `ƒ Proxy (Middleware)` with no warning. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). |
 | ✅ **F17** | ~~**`/api/auth/me` returns the whole user document.**~~ **Fixed** — an explicit projection of the ten fields the client reads, plus `emailVerified`. Vault material was never sourced here (`useVault` uses `/api/vault`). See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). |
 | ✅ **F18** | ~~**Auth boilerplate is duplicated in ~15 route handlers**~~ **Fixed** — all 15 call sites now go through `requireAuth()` / `requireAdmin()` in [`lib/requireAuth.ts`](../lib/requireAuth.ts). `verifyAccessToken` has exactly one caller. See [AUTH-FIX §5](./AUTH-FIX.md#5--f18-f21--one-auth-helper-and-immediate-global-revocation). |
-| ✅ **F20** | ~~**There is no "sign out of all devices".**~~ **Fixed** — `POST /api/auth/logout-all`, exposed as `useAuth().logoutAll()`. Now expressible precisely because F10 made multiple rows possible. **No UI button is wired yet** (same gap as F12). See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). |
+| ✅ **F20** | ~~**There is no "sign out of all devices".**~~ **Fixed** — `POST /api/auth/logout-all`, exposed as `useAuth().logoutAll()` and wired to a button on the settings page ([AUTH-FIX §12](./AUTH-FIX.md#12--f12--settings-page-and-a-session-list)). Now expressible precisely because F10 made multiple rows possible. See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). |
 | ✅ **F21** | ~~**Revocation has an up-to-15-minute lag.**~~ **Fixed for global revocation** — `User.sessionsRevokedAt` is stamped by `revokeAllSessions()` and enforced in `requireAuth()`, so "sign out everywhere" and password change take effect on the **next request**, not in 15 minutes. Costs no extra query: the user document was already being loaded. **Per-device logout still lags** — the access token carries no `jti`, so making that immediate would need a `RefreshToken` read per request. Accepted. See [AUTH-FIX §5](./AUTH-FIX.md#5--f18-f21--one-auth-helper-and-immediate-global-revocation). |
 | ✅ **F22** | ~~**`deleteMany` → `create` in `login` is not atomic**~~ **Dissolved by the F10 fix** — there is no delete-then-create sequence left. Two simultaneous logins are now *supposed* to leave two rows, and with no session cap there is nothing further to reconcile. See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). |
 | **F23** | **No "remember me" — and no way to opt out of being remembered.** `login` hardcodes `REFRESH_TOKEN_EXPIRATION_DAYS = 30` and always sets a *persistent* cookie, so every sign-in (including on a shared or public machine) persists for 30 days. **v1: cookie-only opt-out** (session cookie when unchecked); **server-enforced expiry deferred to v2.** See [§9.1](#91-designing-remember-me-under-option-a). |
@@ -842,12 +842,10 @@ These are deliberate, correct choices and should be preserved:
 16. ✅ **DONE** — ~~Rename `middleware.ts` → `proxy.ts` for Next 16 (F16).~~ See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25).
 17. ✅ **DONE** — ~~Narrow the axios skip-list to `/refresh` + `/login` (F25).~~
     Also fixed `_retry` being set before the skip check. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25).
-18. 🟡 **PARTLY DONE** — ~~handle Google-only accounts explicitly rather than
-    reporting "Incorrect old password" (F12)~~ done (`400 NO_PASSWORD_SET`).
-    **"Give `change-password` a UI caller" remains open** — the settings page is
-    a placeholder, so this is a feature. It should ship together with a button
-    for `useAuth().logoutAll()` (F20), which is unwired for the same reason.
-    See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25).
+18. ✅ **DONE** — ~~Give `change-password` a UI caller, and handle Google-only
+    accounts explicitly (F12).~~ Both done: `400 NO_PASSWORD_SET` (§7), and a
+    settings page with a change-password form, a session list with per-device
+    revoke, and the `logoutAll()` button (F20). See [AUTH-FIX §12](./AUTH-FIX.md#12--f12--settings-page-and-a-session-list).
 19. ✅ **DONE** — ~~Add `zxcvbn` strength gating at registration (F15); enforce
     username uniqueness or drop the notion (F14).~~ Both done; uniqueness is
     enforced by query rather than a unique index, for the reason given in [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25).
@@ -1071,6 +1069,8 @@ Not a small change, which is why it is not part of the F2 fix:
 | `POST /api/auth/refresh` | cookie | — | `200 {accessToken}` | `401` absent/invalid/revoked/expired · `404` user gone |
 | `POST /api/auth/logout` | cookie (optional) | — | `200 {message}` | always clears the cookie; revokes this device's whole rotation lineage |
 | `POST /api/auth/logout-all` | Bearer | — | `200 {success, revoked}` | `401` no/invalid token — revokes every session for the user |
+| `GET /api/auth/sessions` | Bearer | — | `200 {sessions[]}` — device, signed-in, last-active, `current` | `401` |
+| `DELETE /api/auth/sessions` | Bearer | `{family}` | `200 {revoked, wasCurrent}` | `400` no family · `404` not the caller's session |
 | `GET /api/auth/me` | Bearer | — | `200 <user minus password>` | `401` · `404` |
 | `POST /api/auth/google` | — | `{code}` | `200 {accessToken, user}` + cookie | `400` no code/payload · `403` `GOOGLE_EMAIL_UNVERIFIED` · `409` `PASSWORD_ACCOUNT_EXISTS` · `500` exchange failed |
 | `POST /api/auth/change-password` | Bearer | `{oldPassword, newPassword}` | `200 {success, accessToken, revokedSessions}` + new cookie | `400` short · `401` bad old password · `404` |
