@@ -11,6 +11,8 @@
   sign-in still cannot run in *development* until `GOOGLE_CLIENT_SECRET` is set
   (F3 — an environment matter, expected to be present in production). F2 has
   since landed, so enabling Google is no longer blocked on it.
+- **Deployment & rate limiting:** [DEPLOY.md](./DEPLOY.md) — topology, the limits table, and the
+  Redis/nginx/Cloudflare plan.
 - **Fix log:** [`AUTH-FIX.md`](./AUTH-FIX.md) — findings are worked through one
   at a time and recorded there in the order they were fixed. A finding marked
   **✅ Fixed** below is closed; everything unmarked is still open.
@@ -592,7 +594,7 @@ current environment the Google exchange fails before any of F1/F2 matters.
 | --- | --- | --- |
 | ✅ **F4** | ~~**No refresh-token rotation or reuse detection.**~~ **Fixed** — every refresh mints a new `jti` and retires the old row; replaying a retired one outside a 60s multi-tab grace window revokes that token family. Shipped with the `absoluteExpiresAt` hard cap. See [AUTH-FIX §6](./AUTH-FIX.md#6--f4--refresh-token-rotation-with-reuse-detection). | A stolen refresh token is valid for 30 days and its use is indistinguishable from the legitimate user's. Rotation + reuse detection turns theft into a detectable event. |
 | ✅ **F5** | ~~**Changing the password does not revoke sessions.**~~ **Fixed** — `change-password` now calls `revokeAllSessions()` and re-issues a fresh session to the caller. See [AUTH-FIX §4](./AUTH-FIX.md#4--f5-f10-f20--session-management-per-device-sessions-sign-out-everywhere-and-revocation-on-password-change). | Defeats the main reason people change passwords. An attacker with a stolen refresh token keeps access. |
-| **F6** | **No rate limiting** on `login`, `register`, or `refresh`. | Credential stuffing and brute force are unimpeded. bcrypt cost 12 slows each attempt but is not a substitute. |
+| 🟡 **F6** | ~~**No rate limiting** on `login`, `register`, or `refresh`.~~ **App layer built** — `rate-limiter-flexible` over Redis, per-IP *and* per-account, on nine auth endpoints. **Not yet closed:** the `RateLimiterRedis` path is still unverified (tested against the in-memory backend only), and the Redis/nginx/Cloudflare deployment is designed but not built. See [DEPLOY.md](./DEPLOY.md). | Credential stuffing and brute force are unimpeded. bcrypt cost 12 slows each attempt but is not a substitute. |
 | ✅ **F7** | ~~**User enumeration.**~~ **Fixed, both halves.** Login runs one bcrypt compare on every path (measured 261ms vs 248ms); `register` now returns an identical `200` whether the email is free, unverified or already taken — the answer goes to the inbox. Username collisions still `409`, deliberately. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25) and [AUTH-FIX §9](./AUTH-FIX.md#9--f2-stage-2-f7--email-verification-by-otp). | Lets an attacker build a list of valid accounts before attacking them. |
 | ✅ **F8** | ~~**`verifyAccessToken` casts instead of validating.**~~ **Fixed** — see [AUTH-FIX §1](./AUTH-FIX.md#1--f8--token-payload-shape-was-never-validated-at-runtime). | This is the *root cause* that let F1 ship silently. A runtime shape check would have failed loudly. |
 | ✅ **F9** | ~~**Middleware covers only 4 route patterns.**~~ **Fixed** — the matcher now lists every private route (`/editor`, `/links`, `/settings`, `/media`, `/products`, `/admin/*`). Dead `publicRoutes` and the non-existent `/profile` were removed. See [AUTH-FIX §7](./AUTH-FIX.md#7--cleanup-pass--f7-f9-f12-f13-f14-f15-f16-f17-f19-f25). | Not a data leak (APIs are enforced) but inconsistent, and it lets private shells paint before redirecting. |
@@ -821,7 +823,10 @@ These are deliberate, correct choices and should be preserved:
    the lag from 15 minutes to 5 — it never makes revocation immediate. The
    `sessionsRevokedAt` check shipped instead: **immediate** global revocation at
    **zero** extra queries. The TTL stays at 15 minutes. See [AUTH-FIX §5](./AUTH-FIX.md#5--f18-f21--one-auth-helper-and-immediate-global-revocation).
-10. **Rate limiting (F6)** on `login`/`register`/`refresh` — per-IP and per-account.
+10. 🟡 **PARTLY DONE — Rate limiting (F6)** ~~on `login`/`register`/`refresh` —
+    per-IP and per-account.~~ Built for nine endpoints with both keys; the
+    limiter still needs verifying against real Redis, and the deployment it
+    depends on is designed but unbuilt. See [DEPLOY.md](./DEPLOY.md).
 11. 🟡 **PARTLY DONE — Constant-time login (F7):** ~~run a dummy bcrypt compare
     when the user is not found~~ done. ~~and make `register` respond identically~~
     **deferred** — that needs the inbox to carry the signal, i.e. the

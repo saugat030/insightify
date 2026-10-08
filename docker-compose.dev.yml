@@ -1,0 +1,22 @@
+# Development only. The Redis that `npm run dev` talks to.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# Production Redis lives in docker-compose.yml instead: password-protected, no
+# published port, reachable only by the web container over the compose network.
+# This one is published to loopback because `npm run dev` runs on the host.
+#
+# Matches REDIS_URL=redis://localhost:6379 in .env.local - no password, because
+# nothing outside this machine can reach it.
+
+name: insightify-dev
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: dev-redis
+    # Rate-limit data is throwaway; no snapshots to clean up.
+    command: redis-server --save ""
+    # 127.0.0.1, not 0.0.0.0 - otherwise everyone on your network can read it.
+    ports: ["127.0.0.1:6379:6379"]
+    restart: unless-stopped
