@@ -4,6 +4,7 @@ import User from "@/models/User";
 import { issueOtp } from "@/lib/otpFlow";
 import { sendMail } from "@/lib/mail";
 import { noPasswordSetEmail } from "@/lib/otp";
+import { LIMITS, rateLimit } from "@/lib/rateLimit";
 
 // Identical answer whether the address is unknown, password-backed, or
 // Google-only. The real answer goes to the inbox — telling the caller which
@@ -19,6 +20,12 @@ export async function POST(req: Request) {
     if (!email) {
       return NextResponse.json({ error: "Email is required" }, { status: 400 });
     }
+
+    const limited = await rateLimit(req, LIMITS.forgotIp, {
+      rule: LIMITS.forgotAccount,
+      subject: String(email),
+    });
+    if (!limited.ok) return limited.response;
 
     await connectToDb();
     const user = await User.findOne({

@@ -159,7 +159,20 @@ penalised.
 ### 3.4 Determining the client IP
 
 Order of preference in `clientIp()`: `x-real-ip` → `cf-connecting-ip` →
-left-most `x-forwarded-for` → `"unknown"`.
+`"unknown"`.
+
+- `x-real-ip` is the normal path: nginx sets it from `$remote_addr` after
+  verifying the sender is Cloudflare.
+- `cf-connecting-ip` is reached only if an nginx `location` forgets
+  `proxy_set_header X-Real-IP`. nginx forwards this header unchecked, so it is
+  trustworthy **only because ufw admits nothing but Cloudflare**, which
+  overwrites it. Lose ufw as well and this branch becomes spoofable.
+- `x-forwarded-for` is deliberately **not** read. Its left-most entry is
+  whatever the client claimed, so it is spoofable behind any proxy, and it was
+  unreachable in production anyway.
+- `"unknown"` puts every request into one shared bucket. A missing header
+  therefore fails loudly, as 429s for everyone, rather than silently trusting a
+  forgeable value.
 
 > **These headers are forgeable by whoever connects.** They are meaningful only
 > because nginx *overwrites* them and the app is unreachable directly. If the
@@ -196,7 +209,7 @@ Exercised directly against `lib/rateLimit.ts`:
 | Distributed attack — 12 IPs, one account | stopped at attempt **11** by `loginAccount` |
 | Account key normalisation | `victim@example.com` and `  VICTIM@Example.COM  ` share one bucket |
 | `resetLimit` on a blocked bucket | clears it |
-| `clientIp` precedence | `x-real-ip` > `cf-connecting-ip` > left-most `x-forwarded-for` > `unknown` |
+| `clientIp` precedence | `x-real-ip` > `cf-connecting-ip` > `unknown`; a bare `x-forwarded-for` is ignored |
 
 ### Redis-backed results
 
@@ -491,7 +504,10 @@ nginx. 55 matches `burst=50` plus the sustained rate.
 - `proxy_read_timeout 100s` — matched to Cloudflare's free-plan ceiling, since
   waiting longer cannot help (see [§10](#10-known-risks)).
 - `client_max_body_size 25m` — below Cloudflare's 100MB cap.
-- `http2 on`, TLS 1.2/1.3 only, and the usual `nosniff` / `SAMEORIGIN` /
+- HTTP/2 via `listen 443 ssl http2`, not `http2 on`: the latter needs nginx
+  1.25.1+, and Ubuntu 24.04 ships 1.24 (tested: 1.24 rejects it; the old form
+  negotiates HTTP/2 on 1.24 and only warns on 1.28).
+- TLS 1.2/1.3 only, and the usual `nosniff` / `SAMEORIGIN` /
   `Referrer-Policy` headers.
 - The `:80` block only redirects; ufw does not open 80, since Cloudflare reaches
   the origin on 443 under Full (Strict).

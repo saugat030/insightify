@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { LIMITS, rateLimit } from "@/lib/rateLimit";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
 import { consumeOtp } from "@/lib/otpFlow";
@@ -6,6 +7,9 @@ import { issueSession } from "@/lib/session";
 
 export async function POST(req: Request) {
   try {
+    const limited = await rateLimit(req, LIMITS.otpVerifyIp);
+    if (!limited.ok) return limited.response;
+
     const { email, code } = await req.json();
     if (!email || !code) {
       return NextResponse.json(

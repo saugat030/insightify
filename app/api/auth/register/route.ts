@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { LIMITS, rateLimit } from "@/lib/rateLimit";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
 import { checkPasswordStrength } from "@/lib/passwordStrength";
@@ -15,6 +16,9 @@ const GENERIC_OK = {
 
 export async function POST(req: Request) {
   try {
+    const limited = await rateLimit(req, LIMITS.register);
+    if (!limited.ok) return limited.response;
+
     const { username, email, password } = await req.json();
 
     if (!username || !email || !password) {

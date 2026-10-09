@@ -1,5 +1,6 @@
 // app/api/auth/refresh/route.ts
 import { NextResponse, NextRequest } from "next/server";
+import { LIMITS, rateLimit } from "@/lib/rateLimit";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
 import RefreshToken from "@/models/RefreshToken";
@@ -19,6 +20,9 @@ import { cookies } from "next/headers";
 
 export async function POST(req: NextRequest) {
   try {
+    const limited = await rateLimit(req, LIMITS.refresh);
+    if (!limited.ok) return limited.response;
+
     const cookieStore = await cookies();
     const tokenCookie = cookieStore.get(REFRESH_TOKEN_COOKIE_NAME);
 

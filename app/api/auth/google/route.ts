@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { LIMITS, rateLimit } from "@/lib/rateLimit";
 import { OAuth2Client } from "google-auth-library";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
@@ -13,6 +14,9 @@ const oAuth2Client = new OAuth2Client(
 
 export async function POST(req: Request) {
   try {
+    const limited = await rateLimit(req, LIMITS.google);
+    if (!limited.ok) return limited.response;
+
     const { code } = await req.json();
 
     if (!code) {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { LIMITS, rateLimit } from "@/lib/rateLimit";
 import connectToDb from "@/lib/db";
 import User from "@/models/User";
 import { issueOtp } from "@/lib/otpFlow";
@@ -12,6 +13,9 @@ const GENERIC_OK = {
 
 export async function POST(req: Request) {
   try {
+    const limited = await rateLimit(req, LIMITS.otpResendIp);
+    if (!limited.ok) return limited.response;
+
     const { email } = await req.json();
     if (!email) {
       return NextResponse.json({ error: "Email is required" }, { status: 400 });
