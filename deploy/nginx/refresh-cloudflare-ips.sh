@@ -2,6 +2,7 @@
 # Regenerates cloudflare-ips.conf from Cloudflare's published ranges.
 # They change occasionally; a stale list means legitimate edge nodes stop being
 # trusted and every visitor behind them collapses into one rate-limit bucket.
+# run it locally and commit the result
 set -euo pipefail
 cd "$(dirname "$0")"
 
