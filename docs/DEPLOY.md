@@ -441,7 +441,7 @@ keyspace, or split limits and cache into two instances.
 | --- | --- |
 | `app.conf` | The site config: TLS, real-IP resolution, `limit_req` zones, proxy headers. |
 | `cloudflare-ips.conf` | **Generated.** `set_real_ip_from` for every Cloudflare range, then `real_ip_header CF-Connecting-IP`. |
-| `refresh-cloudflare-ips.sh` | Regenerates the above. Cloudflare's ranges change; a stale list means legitimate edge nodes stop being trusted and everyone behind them collapses into one bucket. |
+| `refresh-cloudflare-ips.sh` | Regenerates the above. Cloudflare's ranges change; a stale list means legitimate edge nodes stop being trusted and everyone behind them collapses into one bucket. Nothing runs it automatically - see [§11.17](#1117-weekly-refresh-the-cloudflare-ranges). |
 
 Install by symlink, so the repo stays the source of truth:
 
@@ -814,6 +814,9 @@ sudo ufw status numbered
 
 Port 80 stays shut: Cloudflare reaches the origin on 443 under Full (Strict).
 
+These rules are a snapshot of Cloudflare's list **on the day you run this**. Nothing updates
+them; keep them in sync weekly with [§11.17](#1117-weekly-refresh-the-cloudflare-ranges).
+
 ### 11.10 nginx and the Origin Certificate
 
 ```bash
@@ -940,3 +943,81 @@ echo '{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"}}' \
   | sudo tee /etc/docker/daemon.json
 sudo systemctl restart docker
 ```
+
+### 11.17 Weekly: refresh the Cloudflare ranges
+
+Two copies of Cloudflare's IP list exist, and **nothing updates either one
+automatically**:
+
+| Copy | Decides | If it goes stale when Cloudflare adds a range |
+| --- | --- | --- |
+| `cloudflare-ips.conf` | who nginx believes about `CF-Connecting-IP` | visitors behind the new edge share one rate-limit bucket |
+| ufw | who may reach 443 at all | visitors behind the new edge get Cloudflare **522** errors that never reach your logs |
+
+ufw is the more important of the two. Once a week, in one sitting:
+
+**1. On your PC** (Git Bash, repo root):
+
+```bash
+bash deploy/nginx/refresh-cloudflare-ips.sh
+git diff --stat deploy/nginx/cloudflare-ips.conf
+```
+
+- Use `bash ...`, not `./...`: the script is committed without the executable bit.
+- It prints `wrote N ranges`. Expect about **22** (15 IPv4 + 7 IPv6 in October
+  2026). If N is far lower, Cloudflare returned something odd - **do not
+  commit**. The script has no minimum-count guard.
+- No diff: nothing changed. Skip to step 3.
+- A diff: commit and push it.
+
+> **The first run shows a diff even though the ranges are identical.** The
+> header comments and blank lines differ from the committed copy. Commit it once;
+> after that the diff is empty unless the ranges really changed.
+
+> **Generate on your PC, not on the droplet.** Regenerating on the server
+> modifies a tracked file, and `git pull` then refuses to run - even when the
+> incoming file is byte-for-byte identical (tested). That would break the next
+> routine deploy ([§11.16](#1116-routine-deploys)).
+
+**2. On the droplet**, only if you pushed a change:
+
+```bash
+cd /opt/insightify
+git pull
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+**3. On the droplet, every week**, compare ufw against Cloudflare's live list:
+
+```bash
+published=$( { curl -fsS https://www.cloudflare.com/ips-v4; echo; curl -fsS https://www.cloudflare.com/ips-v6; echo; } | sed '/^$/d' | sort )
+if [ "$(grep -c . <<<"$published")" -lt 10 ]; then
+  echo "Cloudflare fetch failed or looks wrong - change nothing."
+else
+  allowed=$(sudo ufw status | awk '$1=="443/tcp" && $2=="ALLOW" {print $3}' | sort)
+  comm -23 <(echo "$published") <(echo "$allowed") | sed 's|.*|sudo ufw allow from & to any port 443 proto tcp|'
+  comm -13 <(echo "$published") <(echo "$allowed") | sed 's|.*|sudo ufw delete allow from & to any port 443 proto tcp|'
+fi
+```
+
+- **No output: ufw is in sync.** You're done.
+- Otherwise it prints the exact commands to run: `allow` for ranges Cloudflare
+  added, `delete allow` for ones it dropped. Run them, then run the check again.
+  It should print nothing.
+- It compares ufw with Cloudflare **directly**, not with `cloudflare-ips.conf`,
+  so it also catches a rule deleted by mistake.
+- **The guard matters.** Without it, a failed fetch leaves the published list
+  empty, and the check would print a `delete` for *every* rule you have. Running
+  those would remove all Cloudflare rules and take the site down.
+- **The `echo` after each `curl` matters.** Both lists end without a newline, so
+  without it the last IPv4 range and the first IPv6 range would merge into one
+  bogus entry.
+
+Tested on Ubuntu 24.04's ufw:
+
+| Case | Output |
+| --- | --- |
+| In sync | nothing |
+| One range removed, one stale range added | exactly one `allow` and one `delete` |
+| After running those | nothing |
+| Cloudflare fetch fails | the warning, and **no** `delete` commands |
